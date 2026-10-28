@@ -3,10 +3,11 @@
 ## Current
 
 - [ ] End-to-end check: start radio from the app and let Music play several songs
-- [ ] Sharing: Developer ID signing and notarisation, shareable "Queue AM Link" and "Clear AM" shortcut links
+- [ ] Sharing: Developer ID signing and notarisation
 
 ## Completed
 
+- [x] Bundle signed "Queue AM Link" and "Clear AM" files; the setup screen's Add Shortcut button opens them
 - [x] First-run screen with the steps for both shortcuts; ticks each off as it appears, re-checks on return from Shortcuts
 - [x] Next button beside play/pause; skips to the first queued radio song
 - [x] Find songs search hides (Frank Ocean's "Nikes") in the artist's full song list (iTunes lookup), once per artist

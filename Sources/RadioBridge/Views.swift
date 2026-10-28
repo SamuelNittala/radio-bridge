@@ -360,6 +360,10 @@ struct ShortcutCard: View {
                 .buttonStyle(.link)
             }
             Text(purpose).font(.callout).foregroundStyle(.secondary)
+            if !done, let file = Bundle.main.url(forResource: name, withExtension: "shortcut") {
+                Button("Add Shortcut") { NSWorkspace.shared.open(file) }
+                Text("Or make it yourself:").font(.callout).foregroundStyle(.secondary)
+            }
             if !done {
                 ForEach(Array(steps.enumerated()), id: \.offset) { i, step in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {

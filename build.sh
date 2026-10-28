@@ -8,6 +8,9 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp .build/release/RadioBridge "$app/Contents/MacOS/"
 cp Bundle/Info.plist "$app/Contents/"
+# Signed shortcut files: the setup screen opens them so Shortcuts offers "Add Shortcut".
+mkdir -p "$app/Contents/Resources"
+cp Bundle/Shortcuts/*.shortcut "$app/Contents/Resources/"
 # Ad-hoc signature: enough to run locally; sharing needs a Developer ID and notarisation.
 codesign --force --sign - "$app"
 echo "Built $app"
