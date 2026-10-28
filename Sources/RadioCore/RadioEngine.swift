@@ -304,7 +304,10 @@ public final class RadioEngine {
                 if gen == generation {
                     seen.remove(song.videoId)
                     upcoming.insert(song, at: 0)
-                    log(.warning, "Apple Music search failed: \(error.localizedDescription)")
+                    // While searches are paused, each check fails the same way; the first failure was logged.
+                    if case CatalogError.backingOff = error {} else {
+                        log(.warning, "Apple Music search failed: \(error.localizedDescription)")
+                    }
                 }
                 return nil
             }
