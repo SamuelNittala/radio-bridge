@@ -7,6 +7,7 @@
 
 ## Completed
 
+- [x] App icon: a play symbol sending out radio waves, drawn in code (Bundle/Icon)
 - [x] Release workflow: a v* tag builds the universal app, tests it and publishes a GitHub release with the zip
 - [x] Test data from a signed-out YT session, so the repo can be public
 - [x] Bundle signed "Queue AM Link" and "Clear AM" files; the setup screen's Add Shortcut button opens them
