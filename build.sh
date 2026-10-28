@@ -19,6 +19,7 @@ fi
 # Signed shortcut files: the setup screen opens them so Shortcuts offers "Add Shortcut".
 mkdir -p "$app/Contents/Resources"
 cp Bundle/Shortcuts/*.shortcut "$app/Contents/Resources/"
+cp Bundle/AppIcon.icns "$app/Contents/Resources/"
 # Ad-hoc signature: enough to run locally; sharing needs a Developer ID and notarisation.
 codesign --force --sign - "$app"
 echo "Built $app"
