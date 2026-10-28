@@ -82,15 +82,42 @@ import Testing
         #expect(found == nil)
     }
 
+    // "Nikes": no search returns it, but it is in Frank Ocean's full song list.
+    @Test func fallsBackToTheArtistsSongs() async throws {
+        let song = Song(videoId: "v", title: "Nikes", artists: ["Frank Ocean"], length: 314)
+        let nikes = track(5, "Nikes", "Frank Ocean", ms: 314_000)
+        var lookups: [String] = []
+        let found = try await Matching.findTrack(for: song, search: { _ in [] }) { artist in
+            lookups.append(artist)
+            return [self.track(4, "Ivy", "Frank Ocean", ms: 249_000), nikes]
+        }
+        #expect(found?.trackId == 5)
+        #expect(lookups == ["Frank Ocean"])
+    }
+
+    @Test func artistsSongsAreNotNeededWhenSearchFindsIt() async throws {
+        var lookups = 0
+        let found = try await Matching.findTrack(for: song, search: { _ in [self.track(1, "Pink + White", "Frank Ocean")] }) { _ in
+            lookups += 1
+            return []
+        }
+        #expect(found?.trackId == 1)
+        #expect(lookups == 0)
+    }
+
     @Test func plainTitleIsTheLastSearch() {
         let one = Song(videoId: "v", title: "Song (Live)", artists: ["A"])
         #expect(Matching.queries(for: one) == ["Song (Live) A", "song A", "Song (Live)"])
     }
 
     @Test func notOnAppleMusic() async throws {
-        var searches = 0
-        let found = try await Matching.findTrack(for: song) { _ in searches += 1; return [self.track(9, "Other", "Other")] }
+        var searches = 0, lookups = 0
+        let found = try await Matching.findTrack(for: song, search: { _ in
+            searches += 1
+            return [self.track(9, "Other", "Other")]
+        }) { _ in lookups += 1; return [] }
         #expect(found == nil)
         #expect(searches == Matching.queries(for: song).count)
+        #expect(lookups == 1)
     }
 }

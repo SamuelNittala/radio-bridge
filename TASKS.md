@@ -7,6 +7,7 @@
 
 ## Completed
 
+- [x] Find songs search hides (Frank Ocean's "Nikes") in the artist's full song list (iTunes lookup), once per artist
 - [x] Queue by link: pick the song from a 10-result search (exact title first) and add its link with the "Queue AM Link" shortcut; keep 3 songs queued ahead in Music, in order
 - [x] Play/pause button next to Stop; switches Music at once and shows the new state
 - [x] Start a new radio as soon as its first song is queued (no fixed 8 s wait); 3 s grace before a queued song counts as missing

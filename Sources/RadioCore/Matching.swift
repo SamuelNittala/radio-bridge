@@ -76,18 +76,30 @@ public enum Matching {
     /// an exact title first. Nil if it is not on Apple Music.
     ///
     /// The shortcut queues the result by its link, so the store's ranking doesn't matter:
-    /// the song only has to be somewhere in a search's results.
+    /// the song only has to be somewhere in a search's results. Search hides some songs
+    /// (Frank Ocean's "Nikes"), so the artists' full song lists are the last resort.
     public static func findTrack(
         for song: Song,
-        search: (_ term: String) async throws -> [AppleTrack]
+        search: (_ term: String) async throws -> [AppleTrack],
+        artistSongs: (_ artist: String) async throws -> [AppleTrack] = { _ in [] }
     ) async throws -> AppleTrack? {
         // An exact title beats a partial one: "White" is in "Pink + White" but isn't that song.
         var partial: AppleTrack?
-        for q in queries(for: song) {
-            let matches = try await search(q).filter { $0.trackViewUrl != nil && isSameSong(song, $0) }
+        func pick(_ tracks: [AppleTrack]) -> AppleTrack? {
+            let matches = tracks.filter { $0.trackViewUrl != nil && isSameSong(song, $0) }
             if let exact = matches.first(where: { normTitle($0.trackName) == normTitle(song.title) }) { return exact }
             partial = partial ?? matches.first
+            return nil
+        }
+        for q in queries(for: song) {
+            if let found = pick(try await search(q)) { return found }
+        }
+        for artist in song.artists.prefix(maxArtistLookups) {
+            if let found = pick(try await artistSongs(artist)) { return found }
         }
         return partial
     }
+
+    /// Each costs two requests; a YT song rarely lists more than two real artists.
+    static let maxArtistLookups = 2
 }

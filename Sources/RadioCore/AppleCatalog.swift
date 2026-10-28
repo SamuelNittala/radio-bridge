@@ -20,7 +20,8 @@ public enum CatalogError: LocalizedError, Equatable {
 /// Apple's catalog via the free iTunes Search API.
 ///
 /// Remembers each YT song's result on disk, found or not, so a song that comes up
-/// again costs no searches. The API allows roughly 20 requests a minute; after a
+/// again costs no searches. Songs search can't find are looked for in their artist's
+/// full song list (two more requests, once per artist). The API allows roughly 20 requests a minute; after a
 /// failure, searches pause (1 minute, doubling up to 10) instead of retrying at once.
 public actor AppleCatalog: Catalog {
     public typealias Fetch = @Sendable (URL) async throws -> (Data, Int)
@@ -42,6 +43,7 @@ public actor AppleCatalog: Catalog {
     private let fetch: Fetch
     private let clock: @Sendable () -> Date
     private var cache: [String: Cached]
+    private var artistCache: [String: [AppleTrack]] = [:]
     private var pausedUntil: Date?
     private var failures = 0
 
@@ -71,32 +73,44 @@ public actor AppleCatalog: Catalog {
            clock().timeIntervalSince(hit.date) < (hit.track == nil ? Self.missingLifetime : Self.foundLifetime) {
             return hit.track
         }
-        let track = try await Matching.findTrack(for: song) { try await self.search($0) }
+        let track = try await Matching.findTrack(for: song, search: { try await self.search($0) },
+                                                 artistSongs: { try await self.artistSongs($0) })
         cache[key] = Cached(track: track, date: clock())
         save()
         return track
     }
 
     public func search(_ term: String) async throws -> [AppleTrack] {
+        try await request("search", ["term": term, "entity": "song", "limit": String(Self.resultsPerSearch)])
+    }
+
+    /// Everything Apple has by an artist (up to 200 songs), including songs search hides.
+    /// Kept for the session: a radio often plays several songs by one artist.
+    public func artistSongs(_ name: String) async throws -> [AppleTrack] {
+        let key = Matching.norm(name)
+        if let songs = artistCache[key] { return songs }
+        struct Artist: Decodable { var artistId: Int; var artistName: String }
+        let artists: [Artist] = try await request("search", ["term": name, "entity": "musicArtist", "limit": "5"])
+        var songs: [AppleTrack] = []
+        if let artist = artists.first(where: { Matching.norm($0.artistName) == key }) {
+            songs = try await request("lookup", ["id": String(artist.artistId), "entity": "song", "limit": "200"])
+        }
+        artistCache[key] = songs
+        return songs
+    }
+
+    private func request<T: Decodable>(_ endpoint: String, _ items: [String: String]) async throws -> [T] {
         if let pausedUntil, clock() < pausedUntil { throw CatalogError.backingOff(until: pausedUntil) }
-        var url = URLComponents(string: "https://itunes.apple.com/search")!
-        url.queryItems = [
-            URLQueryItem(name: "term", value: term), URLQueryItem(name: "country", value: country),
-            URLQueryItem(name: "entity", value: "song"), URLQueryItem(name: "limit", value: String(Self.resultsPerSearch)),
-        ]
+        var url = URLComponents(string: "https://itunes.apple.com/\(endpoint)")!
+        url.queryItems = (items.merging(["country": country]) { a, _ in a })
+            .sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         do {
             let (data, status) = try await fetch(url.url!)
             guard status == 200 else { throw CatalogError.http(status) }
-            // Skip odd results (missing fields) instead of failing the whole search.
-            struct Lossy: Decodable {
-                var track: AppleTrack?
-                init(from decoder: Decoder) throws { track = try? AppleTrack(from: decoder) }
-            }
-            struct Response: Decodable { var results: [Lossy] }
-            let tracks = try JSONDecoder().decode(Response.self, from: data).results.compactMap(\.track)
+            let results = try JSONDecoder().decode(Response<T>.self, from: data).results.compactMap(\.item)
             failures = 0
             pausedUntil = nil
-            return tracks
+            return results
         } catch {
             failures += 1
             let pause = min(Self.firstPause * pow(2, Double(failures - 1)), Self.longestPause)
@@ -112,3 +126,10 @@ public actor AppleCatalog: Catalog {
     }
 }
 
+private struct Response<T: Decodable>: Decodable { var results: [Lossy<T>] }
+
+/// Skips odd results (missing fields, or an artist row in a lookup) instead of failing the whole request.
+private struct Lossy<T: Decodable>: Decodable {
+    var item: T?
+    init(from decoder: Decoder) throws { item = try? T(from: decoder) }
+}
