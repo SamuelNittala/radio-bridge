@@ -7,6 +7,7 @@ public protocol MusicPlayer: AnyObject {
     func status() -> PlayerStatus
     func nextTrack()
     func play()
+    func pause()
 }
 
 public protocol TrackQueuer: Sendable {
@@ -148,6 +149,12 @@ public final class RadioEngine {
         poller?.cancel()
         poller = nil
         if phase == .starting || phase == .running { phase = .idle }
+    }
+
+    /// Pauses or resumes Music, and shows the new state without waiting for the next check.
+    public func togglePlayback() {
+        if music.state == .playing { player.pause() } else { player.play() }
+        music = player.status()
     }
 
     /// Applies a radio filter: the songs after the one already queued in Music change.

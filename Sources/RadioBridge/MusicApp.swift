@@ -44,6 +44,7 @@ final class MusicAppPlayer: MusicPlayer {
 
     func nextTrack() { run("next track") }
     func play() { run("play") }
+    func pause() { run("pause") }
 
     private func run(_ command: String) {
         NSAppleScript(source: "tell application \"Music\" to \(command)")?.executeAndReturnError(nil)

@@ -9,7 +9,14 @@ final class FakePlayer: MusicPlayer {
     var commands: [String] = []
     func status() -> PlayerStatus { now }
     func nextTrack() { commands.append("next") }
-    func play() { commands.append("play") }
+    func play() {
+        commands.append("play")
+        if now.state == .paused { now.state = .playing }
+    }
+    func pause() {
+        commands.append("pause")
+        if now.state == .playing { now.state = .paused }
+    }
 }
 
 final class FakeQueuer: TrackQueuer, @unchecked Sendable {
@@ -91,6 +98,19 @@ struct FakeCatalog: Catalog {
         #expect(queuer.queries == ["<clear>", "Seed", "Two"])
         #expect(engine.notOnApple.map(\.title) == ["Missing One"])
         #expect(engine.upcoming.first?.title == "Three")
+    }
+
+    @Test func playPauseTogglesMusicAndShowsTheNewState() async {
+        await engine.start(yt.songs[0], poll: false)
+        plays("Seed")
+        await engine.tick()
+        player.commands = []
+        engine.togglePlayback()
+        #expect(player.commands == ["pause"])
+        #expect(engine.music.state == .paused)  // shown now, not at the next check
+        engine.togglePlayback()
+        #expect(player.commands == ["pause", "play"])
+        #expect(engine.music.state == .playing)
     }
 
     @Test func reportsFullPlaysAndLikes() async {

@@ -231,6 +231,17 @@ struct NowPlaying: View {
                 }
             }
             Spacer()
+            if engine.phase == .running {
+                let playing = engine.music.state == .playing
+                Button { engine.togglePlayback() } label: {
+                    Image(systemName: playing ? "pause.fill" : "play.fill")
+                        .font(.title2)
+                        .frame(width: 40, height: 40)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.borderless)
+                .help(playing ? "Pause Apple Music" : "Resume Apple Music")
+            }
             if engine.phase == .running || engine.phase == .starting {
                 Button("Stop") { engine.stop() }
             }
