@@ -3,10 +3,12 @@
 ## Current
 
 - [ ] End-to-end check: start radio from the app and let Music play several songs
-- [ ] Sharing: Developer ID signing and notarisation
+- [ ] Developer ID signing and notarisation, so macOS opens the app without "Open Anyway"
 
 ## Completed
 
+- [x] Release workflow: a v* tag builds the universal app, tests it and publishes a GitHub release with the zip
+- [x] Test data from a signed-out YT session, so the repo can be public
 - [x] Bundle signed "Queue AM Link" and "Clear AM" files; the setup screen's Add Shortcut button opens them
 - [x] First-run screen with the steps for both shortcuts; ticks each off as it appears, re-checks on return from Shortcuts
 - [x] Next button beside play/pause; skips to the first queued radio song
