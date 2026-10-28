@@ -10,6 +10,10 @@ let package = Package(
             name: "RadioCore",
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
+        .executableTarget(
+            name: "RadioBridge",
+            dependencies: ["RadioCore"]
+        ),
         .testTarget(
             name: "RadioCoreTests",
             dependencies: ["RadioCore"],
