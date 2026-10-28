@@ -24,6 +24,14 @@ final class AppModel {
 
     /// Shortcuts the app needs that the user hasn't made yet.
     var missingShortcuts: [String] = []
+    /// False until the first check, so the setup screen doesn't flash on every launch.
+    var shortcutsChecked = false
+    /// Chose to go on without "Clear AM" for this session.
+    var skippedClearShortcut = false
+    /// The setup screen shows until the shortcuts exist; only "Clear AM" can be skipped.
+    var needsShortcutSetup: Bool {
+        shortcutsChecked && missingShortcuts.contains { $0 != clearShortcutName || !skippedClearShortcut }
+    }
     let clearShortcutName = "Clear AM"
 
     var country: String {
@@ -134,6 +142,7 @@ final class AppModel {
 
     func checkShortcuts() async {
         missingShortcuts = await ShortcutQueuer.missing([shortcutName, clearShortcutName])
+        shortcutsChecked = true
     }
 
     // MARK: - Search and playback

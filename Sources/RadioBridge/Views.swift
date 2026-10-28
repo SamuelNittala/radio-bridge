@@ -9,7 +9,9 @@ struct ContentView: View {
         VStack(spacing: 0) {
             AccountBar()
             Divider()
-            if case .signedIn = model.signIn {
+            if model.needsShortcutSetup {
+                ShortcutSetupView()
+            } else if case .signedIn = model.signIn {
                 TextField("Search YT Music for a song to start radio", text: $model.query)
                     .textFieldStyle(.roundedBorder)
                     .padding(12)
@@ -27,6 +29,10 @@ struct ContentView: View {
         .task {
             await model.connect()
             await model.checkShortcuts()
+        }
+        // Coming back from the Shortcuts app: pick up the new shortcuts without a click.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if model.needsShortcutSetup { Task { await model.checkShortcuts() } }
         }
     }
 }
@@ -157,7 +163,6 @@ struct RadioView: View {
                 .frame(maxHeight: .infinity)
         } else {
             VStack(spacing: 0) {
-                if !model.missingShortcuts.isEmpty { ShortcutNotice() }
                 PhaseBanner()
                 NowPlaying()
                 if !engine.chips.isEmpty { Chips() }
@@ -292,22 +297,81 @@ struct Chips: View {
     }
 }
 
-struct ShortcutNotice: View {
+// MARK: - Setup
+
+/// First-run steps for the two shortcuts the app runs; shown until they exist.
+struct ShortcutSetupView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        Banner(text: text, systemImage: "exclamationmark.triangle.fill", tint: .orange) {
-            Button("Open Shortcuts") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Shortcuts.app")) }
-            Button("Check again") { Task { await model.checkShortcuts() } }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Set up two shortcuts").font(.title2.weight(.semibold))
+                    Text("Radio Bridge adds songs to Apple Music through the Shortcuts app. Make these two once; the names must match exactly.")
+                        .foregroundStyle(.secondary)
+                }
+                ShortcutCard(name: model.shortcutName, purpose: "Adds each radio song to Music's queue.", steps: [
+                    "Create a new shortcut and name it \(model.shortcutName).",
+                    "Add Receive input: Text and URLs. If there's no input: Stop and Respond.",
+                    "Add Get URLs from Input, with Shortcut Input.",
+                    "Add Add to Playing Next, with URLs, set to Next.",
+                ])
+                ShortcutCard(name: model.clearShortcutName, purpose: "Empties Music's queue when a new radio starts, so older songs don't play first.", steps: [
+                    "Create a new shortcut and name it \(model.clearShortcutName).",
+                    "Add Clear Playing Next.",
+                ])
+                Text("The first time a song is added, macOS may ask whether Shortcuts can use Apple Music. Click Allow.")
+                    .font(.callout).foregroundStyle(.secondary)
+                HStack {
+                    Button("Open Shortcuts") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Shortcuts.app"))
+                    }
+                    Button("Check again") { Task { await model.checkShortcuts() } }.keyboardShortcut(.defaultAction)
+                    Spacer()
+                    if model.missingShortcuts == [model.clearShortcutName] {
+                        Button("Continue without \(model.clearShortcutName)") { model.skippedClearShortcut = true }
+                    }
+                }
+            }
+            .padding(20)
         }
     }
+}
 
-    private var text: String {
-        model.missingShortcuts.map { name in
-            name == model.clearShortcutName
-                ? "Make a shortcut named '\(name)' with one action: Clear Playing Next. Without it, songs from an earlier radio play first."
-                : "Make a shortcut named '\(name)': Receive Text and URLs, Get URLs from [Shortcut Input], then Add [URLs] to Next of Playing Next."
-        }.joined(separator: "\n")
+struct ShortcutCard: View {
+    @Environment(AppModel.self) private var model
+    let name: String
+    let purpose: String
+    let steps: [String]
+
+    var body: some View {
+        let done = !model.missingShortcuts.contains(name)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(done ? .green : .secondary)
+                Text(name).font(.headline)
+                Spacer()
+                Button("Copy name") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(name, forType: .string)
+                }
+                .buttonStyle(.link)
+            }
+            Text(purpose).font(.callout).foregroundStyle(.secondary)
+            if !done {
+                ForEach(Array(steps.enumerated()), id: \.offset) { i, step in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\(i + 1).").monospacedDigit().foregroundStyle(.secondary)
+                        Text(step)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
