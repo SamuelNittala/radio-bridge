@@ -160,6 +160,12 @@ public final class RadioEngine {
         music = player.status()
     }
 
+    /// Skips to the next song in Music, which is the first one queued from the radio.
+    public func playNext() {
+        skip()
+        music = player.status()
+    }
+
     /// Applies a radio filter: the songs after the ones already queued in Music change.
     public func setFilter(_ name: String) async {
         guard name != filter, phase == .running || phase == .starting, let seed else { return }

@@ -133,6 +133,19 @@ struct FakeCatalog: Catalog {
         #expect(engine.music.state == .playing)
     }
 
+    @Test func nextSkipsToTheFirstQueuedSongAndPlays() async {
+        await engine.start(yt.songs[0], poll: false)
+        plays("Seed", at: 10)
+        await engine.tick()
+        player.commands = []
+        engine.playNext()
+        #expect(player.commands == ["next", "play"])
+        plays("Two")
+        await engine.tick()
+        #expect(engine.current?.song.title == "Two")
+        #expect(engine.activity.contains { $0.kind == .skipped && $0.text.hasPrefix("Skipped: A - Seed") })
+    }
+
     @Test func reportsFullPlaysAndLikes() async {
         await engine.start(yt.songs[0], poll: false)
         plays("Seed", at: 10)

@@ -241,6 +241,16 @@ struct NowPlaying: View {
                 }
                 .buttonStyle(.borderless)
                 .help(playing ? "Pause Apple Music" : "Resume Apple Music")
+                Button { engine.playNext() } label: {
+                    Image(systemName: "forward.fill")
+                        .font(.title2)
+                        .frame(width: 40, height: 40)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.borderless)
+                // With nothing queued, Music would move to its own AutoPlay.
+                .disabled(engine.queued.isEmpty)
+                .help(engine.queued.first.map { "Play next: \($0.name)" } ?? "Nothing queued yet")
             }
             if engine.phase == .running || engine.phase == .starting {
                 Button("Stop") { engine.stop() }
