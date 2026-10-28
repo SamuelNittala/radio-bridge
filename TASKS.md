@@ -7,6 +7,7 @@
 
 ## Completed
 
+- [x] Start a new radio as soon as its first song is queued (no fixed 8 s wait); 3 s grace before a queued song counts as missing
 - [x] Sign in from a Chromium browser's cookies; pick the profile signed in to YT Music
 - [x] YT requests: account, search, radio with filter chips, history, like
 - [x] Apple catalog match (iTunes Search API); exact titles win over partial ones

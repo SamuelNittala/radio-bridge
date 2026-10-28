@@ -85,10 +85,9 @@ public final class RadioEngine {
     public var yt: Recommender
     public var catalog: Catalog
 
-    /// Seconds for a song queued by the shortcut to reach Music.
+    /// Seconds a queued song may take to start playing before it counts as missing.
     let arrivalWait: TimeInterval
     let clock: () -> Date
-    let sleep: (TimeInterval) async -> Void
 
     private var seen = Set<String>()
     private var skippedAt = Date.distantPast
@@ -100,15 +99,13 @@ public final class RadioEngine {
     private var pollInterval: TimeInterval = 2
 
     public init(player: MusicPlayer, queuer: TrackQueuer, yt: Recommender, catalog: Catalog,
-                arrivalWait: TimeInterval = 8, clock: @escaping () -> Date = Date.init,
-                sleep: @escaping (TimeInterval) async -> Void = { try? await Task.sleep(for: .seconds($0)) }) {
+                arrivalWait: TimeInterval = 3, clock: @escaping () -> Date = Date.init) {
         self.player = player
         self.queuer = queuer
         self.yt = yt
         self.catalog = catalog
         self.arrivalWait = arrivalWait
         self.clock = clock
-        self.sleep = sleep
     }
 
     // MARK: - Controls
@@ -140,8 +137,7 @@ public final class RadioEngine {
         guard gen == generation, phase == .starting else { return }
         guard let first else { return fail("Nothing from this radio is on Apple Music.") }
         pending = first
-        await sleep(arrivalWait)  // a queued song takes a few seconds to reach Music
-        guard gen == generation else { return }
+        // The shortcut returns once the song is in Playing Next; if the skip lands elsewhere, step() retries.
         skip()
         phase = .running
         if poll { startPolling() }

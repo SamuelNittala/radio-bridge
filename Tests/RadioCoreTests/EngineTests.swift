@@ -62,7 +62,7 @@ struct FakeCatalog: Catalog {
         })
         let clock = Clock()
         engine = RadioEngine(player: player, queuer: queuer, yt: yt, catalog: FakeCatalog(),
-                             arrivalWait: 8, clock: { clock.now }, sleep: { _ in })
+                             clock: { clock.now })
         self.clock = clock
     }
 
@@ -125,10 +125,10 @@ struct FakeCatalog: Catalog {
         await engine.tick()
         player.commands = []
         plays("Some library song")
-        // Within the arrival wait nothing happens: the queued song may still be on its way.
+        // Right after a skip nothing happens: Music may still be switching tracks.
         await engine.tick()
         #expect(player.commands.isEmpty)
-        advance(10)
+        advance(7)
         await engine.tick()
         #expect(player.commands == ["next", "play"])
     }
