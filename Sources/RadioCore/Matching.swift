@@ -72,33 +72,21 @@ public enum Matching {
         return candidates.filter { seen.insert($0).inserted }
     }
 
-    /// A search whose top store result is this song, as the shortcut will see it.
+    /// The song in Apple's catalog: any release of it (soundtrack, compilation, single),
+    /// an exact title first. Nil if it is not on Apple Music.
     ///
-    /// The shortcut queues the store's single top result, and the store ranks
-    /// differently depending on how many results are asked for, so every check
-    /// asks for one. Any release of the song will do (soundtrack, compilation,
-    /// single). Nil if the song is not on Apple Music.
-    public static func findQuery(
+    /// The shortcut queues the result by its link, so the store's ranking doesn't matter:
+    /// the song only has to be somewhere in a search's results.
+    public static func findTrack(
         for song: Song,
-        search: (_ term: String, _ limit: Int) async throws -> [AppleTrack]
-    ) async throws -> CatalogMatch? {
+        search: (_ term: String) async throws -> [AppleTrack]
+    ) async throws -> AppleTrack? {
         // An exact title beats a partial one: "White" is in "Pink + White" but isn't that song.
-        let exact = { (t: AppleTrack) in isSameSong(song, t) && normTitle(t.trackName) == normTitle(song.title) }
-        var partial: CatalogMatch?
+        var partial: AppleTrack?
         for q in queries(for: song) {
-            if let top = try await search(q, 1).first, isSameSong(song, top) {
-                if exact(top) { return CatalogMatch(query: q, track: top) }
-                partial = partial ?? CatalogMatch(query: q, track: top)
-            }
-            // The song is further down: search for it more precisely, by its album.
-            let matches = try await search(q, 10).filter { isSameSong(song, $0) }
-            for match in (matches.filter(exact) + matches.filter { !exact($0) }).prefix(2) {
-                let refined = [match.trackName, match.artistName, match.collectionName ?? ""]
-                    .filter { !$0.isEmpty }.joined(separator: " ")
-                if let top = try await search(refined, 1).first, exact(top) || (!exact(match) && isSameSong(song, top)) {
-                    return CatalogMatch(query: refined, track: top)
-                }
-            }
+            let matches = try await search(q).filter { $0.trackViewUrl != nil && isSameSong(song, $0) }
+            if let exact = matches.first(where: { normTitle($0.trackName) == normTitle(song.title) }) { return exact }
+            partial = partial ?? matches.first
         }
         return partial
     }

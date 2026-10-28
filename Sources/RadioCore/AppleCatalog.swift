@@ -26,7 +26,7 @@ public actor AppleCatalog: Catalog {
     public typealias Fetch = @Sendable (URL) async throws -> (Data, Int)
 
     struct Cached: Codable {
-        var match: CatalogMatch?
+        var track: AppleTrack?
         var date: Date
     }
 
@@ -35,6 +35,7 @@ public actor AppleCatalog: Catalog {
     static let foundLifetime: TimeInterval = 30 * 86400
     static let firstPause: TimeInterval = 60
     static let longestPause: TimeInterval = 600
+    static let resultsPerSearch = 10
 
     public nonisolated let country: String
     private let cacheFile: URL?
@@ -56,7 +57,7 @@ public actor AppleCatalog: Catalog {
 
     public static var defaultCacheFile: URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("Radio Bridge/apple-matches.json")
+            .appendingPathComponent("Radio Bridge/apple-tracks.json")
     }
 
     public static let urlSessionFetch: Fetch = { url in
@@ -64,24 +65,24 @@ public actor AppleCatalog: Catalog {
         return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
     }
 
-    public func find(_ song: Song) async throws -> CatalogMatch? {
+    public func find(_ song: Song) async throws -> AppleTrack? {
         let key = "\(country)|\(song.videoId)"
         if let hit = cache[key],
-           clock().timeIntervalSince(hit.date) < (hit.match == nil ? Self.missingLifetime : Self.foundLifetime) {
-            return hit.match
+           clock().timeIntervalSince(hit.date) < (hit.track == nil ? Self.missingLifetime : Self.foundLifetime) {
+            return hit.track
         }
-        let match = try await Matching.findQuery(for: song) { try await self.search($0, limit: $1) }
-        cache[key] = Cached(match: match, date: clock())
+        let track = try await Matching.findTrack(for: song) { try await self.search($0) }
+        cache[key] = Cached(track: track, date: clock())
         save()
-        return match
+        return track
     }
 
-    public func search(_ term: String, limit: Int) async throws -> [AppleTrack] {
+    public func search(_ term: String) async throws -> [AppleTrack] {
         if let pausedUntil, clock() < pausedUntil { throw CatalogError.backingOff(until: pausedUntil) }
         var url = URLComponents(string: "https://itunes.apple.com/search")!
         url.queryItems = [
             URLQueryItem(name: "term", value: term), URLQueryItem(name: "country", value: country),
-            URLQueryItem(name: "entity", value: "song"), URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "entity", value: "song"), URLQueryItem(name: "limit", value: String(Self.resultsPerSearch)),
         ]
         do {
             let (data, status) = try await fetch(url.url!)
@@ -110,3 +111,4 @@ public actor AppleCatalog: Catalog {
         try? data.write(to: cacheFile, options: .atomic)
     }
 }
+

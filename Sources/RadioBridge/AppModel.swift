@@ -30,7 +30,7 @@ final class AppModel {
         didSet { defaults.set(country, forKey: "country"); engine.catalog = AppleCatalog(country: country) }
     }
     var shortcutName: String {
-        didSet { defaults.set(shortcutName, forKey: "shortcut"); engine.queuer = ShortcutQueuer(name: shortcutName, clearName: clearShortcutName) }
+        didSet { defaults.set(shortcutName, forKey: "linkShortcut"); engine.queuer = ShortcutQueuer(name: shortcutName, clearName: clearShortcutName) }
     }
     var reportToYT: Bool {
         didSet { defaults.set(reportToYT, forKey: "report"); engine.reportToYT = reportToYT }
@@ -46,7 +46,8 @@ final class AppModel {
         let installed = Browser.all.filter(\.isInstalled)
         browser = Browser.named(defaults.string(forKey: "browser") ?? "") ?? installed.first ?? Browser.all[0]
         let country = defaults.string(forKey: "country") ?? Locale.current.region?.identifier.lowercased() ?? "us"
-        let shortcutName = defaults.string(forKey: "shortcut") ?? "Queue AM"
+        // "shortcut" held the older search-based one ("Queue AM"), which takes words, not links.
+        let shortcutName = defaults.string(forKey: "linkShortcut") ?? "Queue AM Link"
         self.country = country
         self.shortcutName = shortcutName
         reportToYT = defaults.object(forKey: "report") as? Bool ?? true

@@ -11,8 +11,8 @@ public protocol MusicPlayer: AnyObject {
 }
 
 public protocol TrackQueuer: Sendable {
-    /// Adds the store's top result for `query` to Music's Playing Next.
-    func queue(_ query: String) async throws -> QueuedTrack
+    /// Adds the catalog song at `link` to the end of Music's Playing Next.
+    func queue(_ link: URL) async throws
     /// Empties Music's Playing Next, so songs from an earlier radio don't play first.
     func clear() async throws
 }
@@ -25,7 +25,7 @@ public protocol Recommender: Sendable {
 }
 
 public protocol Catalog: Sendable {
-    func find(_ song: Song) async throws -> CatalogMatch?
+    func find(_ song: Song) async throws -> AppleTrack?
 }
 
 extension YTClient: Recommender {}
@@ -33,9 +33,8 @@ extension YTClient: Recommender {}
 /// A YT song that was queued in Music, and how it is being played.
 public struct Entry: Equatable, Sendable {
     public var song: Song
-    /// Name the shortcut reported; Music shows the same name when it plays.
+    /// The catalog name; Music shows the same name when it plays.
     public var name: String
-    public var query: String
     public var track: AppleTrack
     public var queuedAt: Date
     public var pid = ""
@@ -54,9 +53,9 @@ public struct Activity: Identifiable, Sendable {
 
 /// Plays YT Music radio in Apple Music: the logic of loop.py.
 ///
-/// YT picks the songs; each is matched in Apple's catalog and queued as soon as the
-/// previous one starts, so Music moves on by itself and skipping lands on the next
-/// YT song. Finished songs go to YT history; songs favourited in Music are liked on YT.
+/// YT picks the songs; each is matched in Apple's catalog and queued by its link,
+/// keeping a few queued ahead, so Music moves on by itself and skipping lands on
+/// the next YT song. Finished songs go to YT history; songs favourited in Music are liked on YT.
 @MainActor @Observable
 public final class RadioEngine {
     public enum Phase: Equatable {
@@ -71,7 +70,8 @@ public final class RadioEngine {
     public private(set) var filter = "All"
     public private(set) var upcoming: [Song] = []
     public private(set) var current: Entry?
-    public private(set) var pending: Entry?
+    /// Songs added to Music's Playing Next that haven't played yet, in Music's order.
+    public private(set) var queued: [Entry] = []
     /// What Music is playing right now, ours or not.
     public private(set) var music = PlayerStatus.stopped
     public private(set) var notOnApple: [Song] = []
@@ -80,6 +80,8 @@ public final class RadioEngine {
     public var reportToYT = true
     /// Share of a song that must be played for it to count in YT history.
     public var minPlay = 0.5
+    /// Songs kept queued in Music ahead of the current one.
+    public var ahead = 3
 
     public var player: MusicPlayer
     public var queuer: TrackQueuer
@@ -122,7 +124,7 @@ public final class RadioEngine {
         notOnApple = []
         seen = []
         current = nil
-        pending = nil
+        queued = []
         misses = 0
         phase = .starting
         log(.info, "Starting radio from \(song.label)")
@@ -137,8 +139,9 @@ public final class RadioEngine {
         let first = await queueNext()
         guard gen == generation, phase == .starting else { return }
         guard let first else { return fail("Nothing from this radio is on Apple Music.") }
-        pending = first
+        queued = [first]
         // The shortcut returns once the song is in Playing Next; if the skip lands elsewhere, step() retries.
+        // The rest are queued once it plays, so starting doesn't wait for them.
         skip()
         phase = .running
         if poll { startPolling() }
@@ -157,7 +160,7 @@ public final class RadioEngine {
         music = player.status()
     }
 
-    /// Applies a radio filter: the songs after the one already queued in Music change.
+    /// Applies a radio filter: the songs after the ones already queued in Music change.
     public func setFilter(_ name: String) async {
         guard name != filter, phase == .running || phase == .starting, let seed else { return }
         let gen = generation
@@ -202,10 +205,7 @@ public final class RadioEngine {
             cur.maxPosition = max(cur.maxPosition, p.position)
             cur.favorited = p.favorited
             current = cur
-            if pending == nil {
-                let next = await queueNext()
-                if gen == generation { pending = next }
-            }
+            if queued.count < ahead { await topUp() }
             return
         }
 
@@ -214,27 +214,27 @@ public final class RadioEngine {
             finish(cur)
             current = nil
         }
-        if var next = pending, p.name == next.name {
+        if let i = queued.firstIndex(where: { $0.name == p.name }) {
+            // Songs before it were skipped in Music before they started.
+            for skipped in queued[..<i] { log(.skipped, "Skipped: \(skipped.song.label)") }
+            var next = queued[i]
+            queued.removeFirst(i + 1)
             next.pid = p.pid
             next.duration = p.duration
             next.maxPosition = p.position
             next.favorited = p.favorited
             current = next
-            pending = nil
             misses = 0
-            // Queue the following song right away, so skipping lands on it.
-            let queued = await queueNext()
-            if gen == generation { pending = queued }
+            await topUp()
             return
         }
-        // Something not from the YT queue (skipped early, or Music's own autoplay).
+        // Something not from the YT queue (skipped past our songs, or Music's own autoplay).
         let now = clock()
         if now.timeIntervalSince(skippedAt) < 6 { return }  // Music may still be switching to our song
-        if let next = pending, now.timeIntervalSince(next.queuedAt) < arrivalWait { return }
-        guard var next = pending else {
-            log(.info, "Music is playing '\(p.name)', not from YT radio; queuing the next YT song")
-            let queued = await queueNext()
-            if gen == generation { pending = queued }
+        if let next = queued.first, now.timeIntervalSince(next.queuedAt) < arrivalWait { return }
+        guard !queued.isEmpty else {
+            log(.info, "Music is playing '\(p.name)', not from YT radio; queuing the next YT songs")
+            await topUp()
             return
         }
         misses += 1
@@ -242,11 +242,14 @@ public final class RadioEngine {
             return fail("Queued songs aren't reaching Music. Check the shortcut, then start again.")
         }
         if misses == 3 {
-            log(.warning, "'\(next.name)' never arrived; queuing it again")
-            _ = try? await queuer.queue(next.query)
-            guard gen == generation else { return }
-            next.queuedAt = now
-            pending = next
+            // Music lost them (Playing Next cleared, or another album started): add them again, in order.
+            log(.warning, "'\(queued[0].name)' never arrived; queuing it and the songs after it again")
+            for i in queued.indices {
+                guard let link = queued[i].track.trackViewUrl else { continue }
+                _ = try? await queuer.queue(link)
+                guard gen == generation else { return }
+                queued[i].queuedAt = now
+            }
             return
         }
         log(.info, "Music is playing '\(p.name)', not from YT radio; skipping to the YT song")
@@ -286,6 +289,15 @@ public final class RadioEngine {
         return true
     }
 
+    /// Keeps `ahead` songs queued in Music, so skips stay on the radio.
+    private func topUp() async {
+        let gen = generation
+        while gen == generation, queued.count < ahead, let next = await queueNext() {
+            guard gen == generation else { return }
+            queued.append(next)
+        }
+    }
+
     /// Matches the next YT song on Apple Music and queues it in Music.
     private func queueNext() async -> Entry? {
         let gen = generation
@@ -299,9 +311,9 @@ public final class RadioEngine {
             }
             let song = upcoming.removeFirst()
             seen.insert(song.videoId)
-            let match: CatalogMatch?
+            let track: AppleTrack?
             do {
-                match = try await catalog.find(song)
+                track = try await catalog.find(song)
             } catch {
                 // Try this song again on the next check.
                 if gen == generation {
@@ -315,18 +327,15 @@ public final class RadioEngine {
                 return nil
             }
             guard gen == generation else { return nil }
-            guard let match else {
+            guard let track, let link = track.trackViewUrl else {
                 notOnApple.append(song)
                 log(.skipped, "Not on Apple Music: \(song.label)")
                 continue
             }
             do {
-                let queued = try await queuer.queue(match.query)
+                try await queuer.queue(link)
                 guard gen == generation else { return nil }
-                if let id = queued.trackId, id != match.track.trackId {
-                    log(.warning, "Shortcut queued '\(queued.name)', expected '\(match.track.trackName)'")
-                }
-                return Entry(song: song, name: queued.name, query: match.query, track: match.track, queuedAt: clock())
+                return Entry(song: song, name: track.trackName, track: track, queuedAt: clock())
             } catch {
                 if gen == generation { fail("Couldn't queue in Music: \(error.localizedDescription)") }
                 return nil

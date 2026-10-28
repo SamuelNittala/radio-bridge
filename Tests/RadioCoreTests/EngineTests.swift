@@ -20,11 +20,9 @@ final class FakePlayer: MusicPlayer {
 }
 
 final class FakeQueuer: TrackQueuer, @unchecked Sendable {
+    /// Songs added to Playing Next, by the title in their link.
     var queries: [String] = []
-    func queue(_ query: String) async throws -> QueuedTrack {
-        queries.append(query)
-        return QueuedTrack(trackId: nil, name: query)  // the shortcut reports the track name
-    }
+    func queue(_ link: URL) async throws { queries.append(link.lastPathComponent) }
     func clear() async throws { queries.append("<clear>") }
 }
 
@@ -50,9 +48,10 @@ final class FakeYT: Recommender, @unchecked Sendable {
 
 /// Every song is on Apple Music under its own title, except titles starting with "Missing".
 struct FakeCatalog: Catalog {
-    func find(_ song: Song) async throws -> CatalogMatch? {
+    func find(_ song: Song) async throws -> AppleTrack? {
         if song.title.hasPrefix("Missing") { return nil }
-        return CatalogMatch(query: song.title, track: AppleTrack(trackId: 1, trackName: song.title, artistName: "A"))
+        return AppleTrack(trackId: 1, trackName: song.title, artistName: "A",
+                          trackViewUrl: URL(string: "https://music.apple.com/in/song/")!.appendingPathComponent(song.title))
     }
 }
 
@@ -94,10 +93,31 @@ struct FakeCatalog: Catalog {
         plays("Seed")
         await engine.tick()
         #expect(engine.current?.song.title == "Seed")
-        // The next song is queued as soon as the current one starts; songs not on Apple Music are skipped.
-        #expect(queuer.queries == ["<clear>", "Seed", "Two"])
+        // Three songs are kept queued ahead once the first one plays; songs not on Apple Music are skipped.
+        #expect(queuer.queries == ["<clear>", "Seed", "Two", "Three", "Four"])
+        #expect(engine.queued.map(\.name) == ["Two", "Three", "Four"])
         #expect(engine.notOnApple.map(\.title) == ["Missing One"])
-        #expect(engine.upcoming.first?.title == "Three")
+        #expect(engine.upcoming.first?.title == "Five")
+
+        // Topped up, not added to, while the same song plays.
+        await engine.tick()
+        #expect(queuer.queries.count == 5)
+        plays("Two")
+        await engine.tick()
+        #expect(engine.queued.map(\.name) == ["Three", "Four", "Five"])
+    }
+
+    @Test func skippingAheadInMusicStaysOnTheRadio() async {
+        await engine.start(yt.songs[0], poll: false)
+        plays("Seed")
+        await engine.tick()
+        player.commands = []
+        plays("Three")  // "Two" was skipped in Music before it started
+        await engine.tick()
+        #expect(engine.current?.song.title == "Three")
+        #expect(player.commands.isEmpty)
+        #expect(engine.activity.contains { $0.kind == .skipped && $0.text == "Skipped: A - Two" })
+        #expect(engine.queued.map(\.name) == ["Four", "Five", "Six"])
     }
 
     @Test func playPauseTogglesMusicAndShowsTheNewState() async {
@@ -162,7 +182,9 @@ struct FakeCatalog: Catalog {
             advance(10)
             await engine.tick()
         }
-        #expect(queuer.queries.filter { $0 == "Two" }.count == 2)  // queued again on the third miss
+        // The queued songs are added again, in order, on the third miss.
+        #expect(queuer.queries.filter { $0 == "Two" }.count == 2)
+        #expect(queuer.queries.suffix(3) == ["Two", "Three", "Four"])
         if case .failed = engine.phase {} else { Issue.record("expected failure, got \(engine.phase)") }
     }
 

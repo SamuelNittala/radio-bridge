@@ -164,8 +164,8 @@ struct RadioView: View {
                 Divider()
                 List {
                     Section("Up next") {
-                        if let pending = engine.pending {
-                            SongRow(song: pending.song, note: "In Music's queue") { model.play(pending.song) }
+                        ForEach(engine.queued, id: \.song.id) { entry in
+                            SongRow(song: entry.song, note: "In Music's queue") { model.play(entry.song) }
                         }
                         ForEach(engine.upcoming.prefix(20)) { song in
                             SongRow(song: song) { model.play(song) }
@@ -296,7 +296,7 @@ struct ShortcutNotice: View {
         model.missingShortcuts.map { name in
             name == model.clearShortcutName
                 ? "Make a shortcut named '\(name)' with one action: Clear Playing Next. Without it, songs from an earlier radio play first."
-                : "Make a shortcut named '\(name)': Find [Shortcut Input] on the iTunes Store (Music, Songs, 1 item), then Add [iTunes Products] to Next of Playing Next."
+                : "Make a shortcut named '\(name)': Receive Text and URLs, Get URLs from [Shortcut Input], then Add [URLs] to Next of Playing Next."
         }.joined(separator: "\n")
     }
 }

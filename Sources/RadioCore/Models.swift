@@ -58,32 +58,18 @@ public struct AppleTrack: Codable, Hashable, Sendable {
     public var collectionName: String?
     public var trackTimeMillis: Int?
     public var artworkUrl100: URL?
+    /// The song's Apple Music link; the shortcut queues exactly this song.
+    public var trackViewUrl: URL?
 
     public init(trackId: Int, trackName: String, artistName: String, collectionName: String? = nil,
-                trackTimeMillis: Int? = nil, artworkUrl100: URL? = nil) {
+                trackTimeMillis: Int? = nil, artworkUrl100: URL? = nil, trackViewUrl: URL? = nil) {
         self.trackId = trackId
         self.trackName = trackName
         self.artistName = artistName
         self.collectionName = collectionName
         self.trackTimeMillis = trackTimeMillis
         self.artworkUrl100 = artworkUrl100
-    }
-}
-
-/// A store search whose top result is the song, plus that result.
-public struct CatalogMatch: Codable, Equatable, Sendable {
-    public var query: String
-    public var track: AppleTrack
-}
-
-/// What the shortcut reports it queued.
-public struct QueuedTrack: Equatable, Sendable {
-    public var trackId: Int?
-    public var name: String
-
-    public init(trackId: Int?, name: String) {
-        self.trackId = trackId
-        self.name = name
+        self.trackViewUrl = trackViewUrl
     }
 }
 

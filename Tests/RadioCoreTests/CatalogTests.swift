@@ -14,7 +14,8 @@ final class FakeStore: @unchecked Sendable {
             .queryItems!.first { $0.name == "term" }!.value!)
         let body = try! JSONSerialization.data(withJSONObject: ["results": tracks.map {
             ["trackId": $0.trackId, "trackName": $0.trackName, "artistName": $0.artistName,
-             "collectionName": $0.collectionName ?? "", "trackTimeMillis": $0.trackTimeMillis ?? 0] as [String: Any]
+             "collectionName": $0.collectionName ?? "", "trackTimeMillis": $0.trackTimeMillis ?? 0,
+             "trackViewUrl": $0.trackViewUrl?.absoluteString ?? ""] as [String: Any]
         }])
         return (body, status)
     }
@@ -24,7 +25,8 @@ final class FakeStore: @unchecked Sendable {
     let store = FakeStore()
     let song = Song(videoId: "v1", title: "Pink + White", artists: ["Frank Ocean"], length: 184)
     let pink = AppleTrack(trackId: 2, trackName: "Pink + White", artistName: "Frank Ocean",
-                          collectionName: "Blonde", trackTimeMillis: 184_000)
+                          collectionName: "Blonde", trackTimeMillis: 184_000,
+                          trackViewUrl: URL(string: "https://music.apple.com/in/album/pink-white/1146195596?i=1146195714"))
 
     func catalog(file: URL? = nil) -> AppleCatalog {
         let store = self.store
@@ -34,8 +36,8 @@ final class FakeStore: @unchecked Sendable {
     @Test func foundSongIsNotSearchedAgain() async throws {
         store.tracks = [pink]
         let catalog = catalog()
-        #expect(try await catalog.find(song)?.track.trackId == 2)
-        #expect(try await catalog.find(song)?.track.trackId == 2)
+        #expect(try await catalog.find(song)?.trackId == 2)
+        #expect(try await catalog.find(song)?.trackId == 2)
         #expect(store.calls.count == 1)
     }
 
@@ -48,7 +50,7 @@ final class FakeStore: @unchecked Sendable {
         #expect(store.calls.count == searches)
         store.now += 2 * 86400
         store.tracks = [pink]
-        #expect(try await catalog.find(song)?.track.trackId == 2)
+        #expect(try await catalog.find(song)?.trackId == 2)
     }
 
     @Test func cacheSurvivesRestart() async throws {
@@ -57,7 +59,7 @@ final class FakeStore: @unchecked Sendable {
         store.tracks = [pink]
         _ = try await catalog(file: file).find(song)
         store.calls = []
-        #expect(try await catalog(file: file).find(song)?.track.trackId == 2)
+        #expect(try await catalog(file: file).find(song)?.trackId == 2)
         #expect(store.calls.isEmpty)
     }
 
@@ -82,6 +84,6 @@ final class FakeStore: @unchecked Sendable {
         store.now += 2
         store.status = 200
         store.tracks = [pink]
-        #expect(try await catalog.find(song)?.track.trackId == 2)
+        #expect(try await catalog.find(song)?.trackId == 2)
     }
 }

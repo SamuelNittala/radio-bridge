@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import RadioCore
 
@@ -27,8 +28,9 @@ import Testing
 @Suite struct CatalogMatching {
     let song = Song(videoId: "v", title: "Pink + White", artists: ["Frank Ocean"], length: 184)
 
-    func track(_ id: Int, _ name: String, _ artist: String, ms: Int = 184_000) -> AppleTrack {
-        AppleTrack(trackId: id, trackName: name, artistName: artist, collectionName: "Blonde", trackTimeMillis: ms)
+    func track(_ id: Int, _ name: String, _ artist: String, ms: Int = 184_000, album: String = "Blonde") -> AppleTrack {
+        AppleTrack(trackId: id, trackName: name, artistName: artist, collectionName: album, trackTimeMillis: ms,
+                   trackViewUrl: URL(string: "https://music.apple.com/in/album/x/1?i=\(id)"))
     }
 
     @Test func sameSong() {
@@ -38,41 +40,46 @@ import Testing
         #expect(!Matching.isSameSong(song, track(1, "Nikes", "Frank Ocean")))
     }
 
-    @Test func topResultIsUsedAsIs() async throws {
-        let match = try await Matching.findQuery(for: song) { _, _ in [self.track(1, "Pink + White", "Frank Ocean")] }
-        #expect(match == CatalogMatch(query: "Pink + White Frank Ocean", track: track(1, "Pink + White", "Frank Ocean")))
-    }
-
-    // The case from the log: the store put "White (feat. John Mayer)" first.
-    @Test func refinesWhenRightSongIsNotFirst() async throws {
-        let white = track(1, "White (feat. John Mayer)", "Frank Ocean"), pink = track(2, "Pink + White", "Frank Ocean")
+    @Test func oneSearchWhenTheSongIsInTheResults() async throws {
         var searches: [String] = []
-        let match = try await Matching.findQuery(for: song) { term, limit in
-            searches.append("\(term) /\(limit)")
-            if term.hasSuffix("Blonde") { return [pink] }
-            return limit == 1 ? [white] : [white, pink]
-        }
-        #expect(match?.query == "Pink + White Frank Ocean Blonde")
-        #expect(match?.track.trackId == 2)
-        #expect(searches == ["Pink + White Frank Ocean /1", "Pink + White Frank Ocean /10", "Pink + White Frank Ocean Blonde /1"])
+        let found = try await Matching.findTrack(for: song) { searches.append($0); return [self.track(1, "Pink + White", "Frank Ocean")] }
+        #expect(found?.trackId == 1)
+        #expect(searches == ["Pink + White Frank Ocean"])
     }
 
-    // "Adhento Gaani Vunnapaatuga": the store lists a "Vocals Only" single first, and the
-    // precise search for the compilation release returns the soundtrack release instead.
+    // The store put "White (feat. John Mayer)" first; "White" is in "Pink + White" but isn't that song.
+    @Test func exactTitleWinsOverHigherRankedPartialOne() async throws {
+        let white = track(1, "White (feat. John Mayer)", "Frank Ocean"), pink = track(2, "Pink + White", "Frank Ocean")
+        let found = try await Matching.findTrack(for: song) { _ in [white, pink] }
+        #expect(found?.trackId == 2)
+    }
+
+    // "Blinding Lights The Weeknd": the store's one-result search came back empty, and the
+    // ROSALÍA remix has the same title once "(Remix)" is dropped; its length rules it out.
+    @Test func picksTheRightVersionFromTheResults() async throws {
+        let song = Song(videoId: "v", title: "Blinding Lights", artists: ["The Weeknd"], length: 202)
+        let remix = track(1, "Blinding Lights (Remix)", "The Weeknd & ROSALÍA", ms: 216_000, album: "Single")
+        let original = track(2, "Blinding Lights", "The Weeknd", ms: 200_000, album: "After Hours (Deluxe)")
+        let found = try await Matching.findTrack(for: song) { _ in [remix, original] }
+        #expect(found?.trackId == 2)
+    }
+
+    // "Adhento Gaani Vunnapaatuga": a "Vocals Only" single comes first; any full release will do.
     @Test func acceptsAnotherReleaseOfTheSong() async throws {
         let song = Song(videoId: "v", title: "Adhento Gaani Vunnapaatuga", artists: ["Anirudh Ravichander"], length: 238)
-        let vocals = AppleTrack(trackId: 1, trackName: "Adhento Gaani Vunnapaatuga - Anirudh Ravichander Vocals Only",
-                                artistName: "Anirudh Ravichander", collectionName: "Single", trackTimeMillis: 195_000)
-        let compilation = AppleTrack(trackId: 2, trackName: "Adhento Gaani Vunnapaatuga", artistName: "Anirudh Ravichander",
-                                     collectionName: "Telugu Romantic Hits", trackTimeMillis: 237_000)
-        let soundtrack = AppleTrack(trackId: 3, trackName: "Adhento Gaani Vunnapaatuga", artistName: "Anirudh Ravichander",
-                                    collectionName: "Jersey", trackTimeMillis: 237_000)
-        let match = try await Matching.findQuery(for: song) { term, limit in
-            if term.hasSuffix("Telugu Romantic Hits") { return [soundtrack] }
-            return limit == 1 ? [vocals] : [vocals, compilation, soundtrack]
-        }
-        #expect(match?.track.trackId == 3)
-        #expect(match?.query == "Adhento Gaani Vunnapaatuga Anirudh Ravichander Telugu Romantic Hits")
+        let vocals = track(1, "Adhento Gaani Vunnapaatuga - Anirudh Ravichander Vocals Only", "Anirudh Ravichander",
+                           ms: 195_000, album: "Single")
+        let compilation = track(2, "Adhento Gaani Vunnapaatuga", "Anirudh Ravichander", ms: 237_000, album: "Telugu Romantic Hits")
+        let soundtrack = track(3, "Adhento Gaani Vunnapaatuga", "Anirudh Ravichander", ms: 237_000, album: "Jersey")
+        let found = try await Matching.findTrack(for: song) { _ in [vocals, compilation, soundtrack] }
+        #expect(found?.trackId == 2)
+    }
+
+    @Test func resultsWithoutALinkCantBeQueued() async throws {
+        var noLink = track(1, "Pink + White", "Frank Ocean")
+        noLink.trackViewUrl = nil
+        let found = try await Matching.findTrack(for: song) { _ in [noLink] }
+        #expect(found == nil)
     }
 
     @Test func plainTitleIsTheLastSearch() {
@@ -81,7 +88,9 @@ import Testing
     }
 
     @Test func notOnAppleMusic() async throws {
-        let match = try await Matching.findQuery(for: song) { _, _ in [self.track(9, "Other", "Other")] }
-        #expect(match == nil)
+        var searches = 0
+        let found = try await Matching.findTrack(for: song) { _ in searches += 1; return [self.track(9, "Other", "Other")] }
+        #expect(found == nil)
+        #expect(searches == Matching.queries(for: song).count)
     }
 }

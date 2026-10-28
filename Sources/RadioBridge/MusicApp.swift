@@ -59,29 +59,22 @@ enum ShortcutError: LocalizedError {
     }
 }
 
-/// Queues songs with the user's shortcut: Find iTunes Store items -> Add to Playing Next.
-/// Shortcuts can add catalog songs to Music's queue without bringing Music forward.
+/// Queues songs with the user's shortcut: Get URLs from Input -> Add to Playing Next.
+/// Shortcuts can add catalog songs to Music's queue without bringing Music forward;
+/// given a link, it adds exactly that song, at the end of Playing Next.
 struct ShortcutQueuer: TrackQueuer {
     var name: String
     /// Shortcut with the single action "Clear Playing Next".
     var clearName: String
 
-    func queue(_ query: String) async throws -> QueuedTrack {
+    func queue(_ link: URL) async throws {
         let input = FileManager.default.temporaryDirectory.appendingPathComponent("queue-\(UUID().uuidString).txt")
-        try query.write(to: input, atomically: true, encoding: .utf8)
+        try link.absoluteString.write(to: input, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: input) }
-        let (status, out, err) = try await Self.run(["run", name, "-i", input.path])
+        let (status, _, err) = try await Self.run(["run", name, "-i", input.path])
         guard status == 0 else {
             throw ShortcutError.failed(err.isEmpty ? "The '\(name)' shortcut failed." : err)
         }
-        // Output looks like "Song Name by Artist https://music.apple.com/...?i=123".
-        let text = out.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trackId = try! NSRegularExpression(pattern: #"[?&]i=(\d+)"#)
-            .firstMatch(in: text, range: NSRange(text.startIndex..., in: text))
-            .flatMap { Range($0.range(at: 1), in: text) }
-            .flatMap { Int(text[$0]) }
-        let songName = text.range(of: " by ").map { String(text[..<$0.lowerBound]) } ?? text
-        return QueuedTrack(trackId: trackId, name: songName)
     }
 
     func clear() async throws {
