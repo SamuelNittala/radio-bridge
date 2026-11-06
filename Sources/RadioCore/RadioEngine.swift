@@ -8,6 +8,8 @@ public protocol MusicPlayer: AnyObject {
     func nextTrack()
     func play()
     func pause()
+    /// Favourites (or un-favourites) the current track in Music.
+    func setFavorited(_ on: Bool)
 }
 
 public protocol TrackQueuer: Sendable {
@@ -95,6 +97,9 @@ public final class RadioEngine {
     private var seen = Set<String>()
     private var skippedAt = Date.distantPast
     private var misses = 0
+    /// A favourite set from the app: Music reports a new one about 5 s late, so it is
+    /// shown until Music agrees, or for at most 10 s.
+    private var heldFavorite: (pid: String, on: Bool, until: Date)?
     private var busy = false
     /// Bumped on start and stop, so work still in flight from before is dropped.
     private var generation = 0
@@ -160,6 +165,28 @@ public final class RadioEngine {
         music = player.status()
     }
 
+    /// Favourites the current radio song in Music, or takes it back. It is liked on YT
+    /// when it finishes, if it is still favourited then; songs not from the radio are left alone.
+    public func toggleFavorite() {
+        // Asks Music first: it may have moved on since the last check.
+        music = player.status()
+        guard var cur = current, music.pid == cur.pid else { return }
+        let on = !cur.favorited
+        player.setFavorited(on)
+        heldFavorite = (cur.pid, on, clock().addingTimeInterval(10))
+        cur.favorited = on
+        current = cur
+    }
+
+    /// What Music says, unless a favourite set from the app hasn't reached it yet.
+    private func favorited(_ p: PlayerStatus) -> Bool {
+        if let held = heldFavorite, held.pid == p.pid, held.on != p.favorited, clock() < held.until {
+            return held.on
+        }
+        heldFavorite = nil
+        return p.favorited
+    }
+
     /// Skips to the next song in Music, which is the first one queued from the radio.
     public func playNext() {
         skip()
@@ -209,7 +236,7 @@ public final class RadioEngine {
 
         if var cur = current, p.pid == cur.pid {
             cur.maxPosition = max(cur.maxPosition, p.position)
-            cur.favorited = p.favorited
+            cur.favorited = favorited(p)
             current = cur
             if queued.count < ahead { await topUp() }
             return

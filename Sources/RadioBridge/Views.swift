@@ -237,6 +237,18 @@ struct NowPlaying: View {
             }
             Spacer()
             if engine.phase == .running {
+                let favorited = engine.current?.favorited == true
+                Button { engine.toggleFavorite() } label: {
+                    Image(systemName: favorited ? "star.fill" : "star")
+                        .font(.title2)
+                        .foregroundStyle(favorited ? Color.pink : Color.secondary)
+                        .frame(width: 40, height: 40)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.borderless)
+                // Only radio songs: Music may be playing something else for a moment.
+                .disabled(engine.current == nil || engine.music.pid != engine.current?.pid)
+                .help(favorited ? "Remove from Favourites" : "Favourite in Apple Music; liked on YT when it finishes")
                 let playing = engine.music.state == .playing
                 Button { engine.togglePlayback() } label: {
                     Image(systemName: playing ? "pause.fill" : "play.fill")

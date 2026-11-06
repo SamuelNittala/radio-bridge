@@ -7,6 +7,8 @@ import Testing
 final class FakePlayer: MusicPlayer {
     var now = PlayerStatus.stopped
     var commands: [String] = []
+    /// Like Music: a new favourite isn't reported until later (never, here).
+    var lagsFavorites = false
     func status() -> PlayerStatus { now }
     func nextTrack() { commands.append("next") }
     func play() {
@@ -16,6 +18,10 @@ final class FakePlayer: MusicPlayer {
     func pause() {
         commands.append("pause")
         if now.state == .playing { now.state = .paused }
+    }
+    func setFavorited(_ on: Bool) {
+        commands.append(on ? "favorite" : "unfavorite")
+        if !(on && lagsFavorites) { now.favorited = on }
     }
 }
 
@@ -144,6 +150,80 @@ struct FakeCatalog: Catalog {
         await engine.tick()
         #expect(engine.current?.song.title == "Two")
         #expect(engine.activity.contains { $0.kind == .skipped && $0.text.hasPrefix("Skipped: A - Seed") })
+    }
+
+    @Test func heartFavouritesInMusicAndLikesOnYTWhenTheSongEnds() async {
+        await engine.start(yt.songs[0], poll: false)
+        plays("Seed", at: 10)
+        await engine.tick()
+        player.commands = []
+        engine.toggleFavorite()
+        #expect(player.commands == ["favorite"])
+        #expect(engine.current?.favorited == true)  // shown now, not at the next check
+        #expect(yt.liked.isEmpty)
+        plays("Seed", at: 80, favorited: true)
+        await engine.tick()
+        plays("Two")
+        await engine.tick()
+        try? await Task.sleep(for: .milliseconds(50))  // reports run in the background
+        #expect(yt.liked == ["v0"])
+    }
+
+    @Test func heartTakenBackBeforeTheEndIsNotLiked() async {
+        await engine.start(yt.songs[0], poll: false)
+        plays("Seed", at: 10)
+        await engine.tick()
+        engine.toggleFavorite()
+        engine.toggleFavorite()
+        #expect(player.commands.suffix(2) == ["favorite", "unfavorite"])
+        #expect(engine.current?.favorited == false)
+        plays("Seed", at: 80)
+        await engine.tick()
+        plays("Two")
+        await engine.tick()
+        try? await Task.sleep(for: .milliseconds(50))  // reports run in the background
+        #expect(yt.liked.isEmpty)
+    }
+
+    // Music records a new favourite a few seconds late; the star must not flip back meanwhile.
+    @Test func heartStaysOnWhileMusicCatchesUp() async {
+        await engine.start(yt.songs[0], poll: false)
+        plays("Seed", at: 10)
+        await engine.tick()
+        player.lagsFavorites = true
+        engine.toggleFavorite()
+        #expect(engine.current?.favorited == true)
+        advance(2)
+        await engine.tick()
+        #expect(engine.current?.favorited == true)
+        // Ends before Music caught up: still liked.
+        plays("Two")
+        await engine.tick()
+        try? await Task.sleep(for: .milliseconds(50))  // reports run in the background
+        #expect(yt.liked == ["v0"])
+    }
+
+    // If Music never takes the favourite, the star goes back to what Music says.
+    @Test func heartFollowsMusicAgainAfterAWhile() async {
+        await engine.start(yt.songs[0], poll: false)
+        plays("Seed", at: 10)
+        await engine.tick()
+        player.lagsFavorites = true
+        engine.toggleFavorite()
+        advance(11)
+        await engine.tick()
+        #expect(engine.current?.favorited == false)
+    }
+
+    // Music is playing something that isn't from the radio: leave it alone.
+    @Test func heartDoesNothingForOtherSongs() async {
+        await engine.start(yt.songs[0], poll: false)
+        plays("Seed", at: 10)
+        await engine.tick()
+        plays("Not from the radio")
+        player.commands = []
+        engine.toggleFavorite()
+        #expect(player.commands.isEmpty)
     }
 
     @Test func reportsFullPlaysAndLikes() async {
