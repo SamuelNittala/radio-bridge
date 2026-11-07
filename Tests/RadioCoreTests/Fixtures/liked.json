@@ -1,0 +1,312 @@
+{
+ "contents": {
+  "twoColumnBrowseResultsRenderer": {
+   "secondaryContents": {
+    "sectionListRenderer": {
+     "contents": [
+      {
+       "musicPlaylistShelfRenderer": {
+        "playlistId": "LM",
+        "contents": [
+         {
+          "musicResponsiveListItemRenderer": {
+           "thumbnail": {
+            "musicThumbnailRenderer": {
+             "thumbnail": {
+              "thumbnails": [
+               {
+                "url": "https://lh3.googleusercontent.com/fake-lkd-0000001=w60-h60",
+                "width": 60,
+                "height": 60
+               },
+               {
+                "url": "https://lh3.googleusercontent.com/fake-lkd-0000001=w120-h120",
+                "width": 120,
+                "height": 120
+               }
+              ]
+             }
+            }
+           },
+           "flexColumns": [
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "Blinding Lights",
+                 "navigationEndpoint": {
+                  "watchEndpoint": {
+                   "videoId": "lkd-0000001",
+                   "playlistId": "LM"
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "The Weeknd",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "UC-artist-0"
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "After Hours",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "MPREb-album"
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+             }
+            }
+           ],
+           "fixedColumns": [
+            {
+             "musicResponsiveListItemFixedColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "3:20"
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+              "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+             }
+            }
+           ],
+           "playlistItemData": {
+            "videoId": "lkd-0000001"
+           }
+          }
+         },
+         {
+          "musicResponsiveListItemRenderer": {
+           "thumbnail": {
+            "musicThumbnailRenderer": {
+             "thumbnail": {
+              "thumbnails": [
+               {
+                "url": "https://lh3.googleusercontent.com/fake-lkd-0000002=w60-h60",
+                "width": 60,
+                "height": 60
+               },
+               {
+                "url": "https://lh3.googleusercontent.com/fake-lkd-0000002=w120-h120",
+                "width": 120,
+                "height": 120
+               }
+              ]
+             }
+            }
+           },
+           "flexColumns": [
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "Naatu Naatu",
+                 "navigationEndpoint": {
+                  "watchEndpoint": {
+                   "videoId": "lkd-0000002",
+                   "playlistId": "LM"
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "Rahul Sipligunj",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "UC-artist-0"
+                  }
+                 }
+                },
+                {
+                 "text": " & "
+                },
+                {
+                 "text": "Kaala Bhairava",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "UC-artist-2"
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "RRR",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "MPREb-album"
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+             }
+            }
+           ],
+           "fixedColumns": [
+            {
+             "musicResponsiveListItemFixedColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "3:35"
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+              "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+             }
+            }
+           ],
+           "playlistItemData": {
+            "videoId": "lkd-0000002"
+           }
+          }
+         },
+         {
+          "musicResponsiveListItemRenderer": {
+           "thumbnail": {
+            "musicThumbnailRenderer": {
+             "thumbnail": {
+              "thumbnails": [
+               {
+                "url": "https://lh3.googleusercontent.com/fake-lkd-0000003=w60-h60",
+                "width": 60,
+                "height": 60
+               },
+               {
+                "url": "https://lh3.googleusercontent.com/fake-lkd-0000003=w120-h120",
+                "width": 120,
+                "height": 120
+               }
+              ]
+             }
+            }
+           },
+           "flexColumns": [
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "Pink + White",
+                 "navigationEndpoint": {
+                  "watchEndpoint": {
+                   "videoId": "lkd-0000003",
+                   "playlistId": "LM"
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "Frank Ocean",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "UC-artist-0"
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {},
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+             }
+            }
+           ],
+           "fixedColumns": [
+            {
+             "musicResponsiveListItemFixedColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "3:04"
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+              "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+             }
+            }
+           ],
+           "playlistItemData": {
+            "videoId": "lkd-0000003"
+           }
+          }
+         },
+         {
+          "continuationItemRenderer": {
+           "trigger": "CONTINUATION_TRIGGER_ON_ITEM_PRESCAN_VISIBLE",
+           "continuationEndpoint": {
+            "continuationCommand": {
+             "token": "FAKE-CONTINUATION-TOKEN",
+             "request": "CONTINUATION_REQUEST_TYPE_BROWSE"
+            }
+           }
+          }
+         }
+        ]
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+}

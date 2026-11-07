@@ -93,19 +93,8 @@ struct ShortcutQueuer: TrackQueuer {
     }
 
     private static func run(_ arguments: [String]) async throws -> (Int32, String, String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/shortcuts")
-        process.arguments = arguments
-        let out = Pipe(), err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-        try process.run()
-        // Read while it runs, so a long output can't fill the pipe and stall it.
-        return await Task.detached {
-            let o = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            let e = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            process.waitUntilExit()
-            return (process.terminationStatus, o, e.trimmingCharacters(in: .whitespacesAndNewlines))
-        }.value
+        let result = try await ProcessRunner.run(URL(fileURLWithPath: "/usr/bin/shortcuts"), arguments)
+        return (result.status, String(decoding: result.output, as: UTF8.self),
+                String(decoding: result.error, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }

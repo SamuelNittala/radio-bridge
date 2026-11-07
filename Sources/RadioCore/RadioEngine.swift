@@ -24,6 +24,7 @@ public protocol Recommender: Sendable {
     func radio(from videoId: String, filter: String?) async throws -> RadioPage
     func reportPlay(_ videoId: String) async throws -> HistoryResult
     func like(_ videoId: String) async throws
+    func likedSongs() async throws -> [Song]
 }
 
 public protocol Catalog: Sendable {
@@ -43,6 +44,8 @@ public struct Entry: Equatable, Sendable {
     public var duration = 0.0
     public var maxPosition = 0.0
     public var favorited = false
+    /// Already liked on YT when it started, so it isn't liked there again.
+    public var likedOnYT = false
 }
 
 public struct Activity: Identifiable, Sendable {
@@ -80,6 +83,10 @@ public final class RadioEngine {
     public private(set) var activity: [Activity] = []
 
     public var reportToYT = true
+    /// Called on the main actor after a song is liked on YT, so the UI can add it to the mood library.
+    public var onLiked: ((Song) -> Void)?
+    /// Whether the user has liked a song on YT; such songs are favourited in Music when they start.
+    public var isLikedOnYT: ((Song) -> Bool)?
     /// Share of a song that must be played for it to count in YT history.
     public var minPlay = 0.5
     /// Songs kept queued in Music ahead of the current one.
@@ -150,6 +157,25 @@ public final class RadioEngine {
         skip()
         phase = .running
         if poll { startPolling() }
+    }
+
+    /// Starts radio for a mood: picks one of its songs, starts its radio, then applies the
+    /// first of the mood's YT filters a chip matches (case-insensitive). No songs -> nothing.
+    public func start(mood: Mood, from songs: [Song], poll: Bool = true,
+                      pick: ([Song]) -> Song? = { $0.randomElement() }) async {
+        guard let song = pick(songs) else { return }
+        await start(song, poll: poll)
+        // Another radio may have been started while this one was starting; only carry on if the
+        // radio that is now running is still ours, so the filter can't land on a newer radio.
+        guard phase == .running, seed == song else { return }
+        log(.info, "Mood: \(mood.title)")
+        // The mood's filters are tried in order; the first a chip matches wins.
+        for filter in mood.ytFilters {
+            if let chip = chips.first(where: { $0.name.caseInsensitiveCompare(filter) == .orderedSame }) {
+                await setFilter(chip.name)
+                return
+            }
+        }
     }
 
     public func stop() {
@@ -256,6 +282,15 @@ public final class RadioEngine {
             next.duration = p.duration
             next.maxPosition = p.position
             next.favorited = p.favorited
+            // Liked on YT already: favourite it in Music too, so the two agree.
+            if isLikedOnYT?(next.song) == true {
+                next.likedOnYT = true
+                if !p.favorited {
+                    player.setFavorited(true)
+                    heldFavorite = (p.pid, true, clock().addingTimeInterval(10))
+                    next.favorited = true
+                }
+            }
             current = next
             misses = 0
             await topUp()
@@ -399,10 +434,11 @@ public final class RadioEngine {
                     log(.warning, "YT history failed: \(error.localizedDescription)")
                 }
             }
-            if entry.favorited {
+            if entry.favorited && !entry.likedOnYT {
                 do {
                     try await yt.like(song.videoId)
                     log(.liked, "Liked on YT: \(song.label)")
+                    onLiked?(song)
                 } catch {
                     log(.warning, "YT like failed: \(error.localizedDescription)")
                 }

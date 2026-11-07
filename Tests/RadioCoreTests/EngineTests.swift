@@ -28,8 +28,18 @@ final class FakePlayer: MusicPlayer {
 final class FakeQueuer: TrackQueuer, @unchecked Sendable {
     /// Songs added to Playing Next, by the title in their link.
     var queries: [String] = []
+    /// Makes the next clear() wait until `held` is set back to false, so a start can be slowed down.
+    var holdNextClear = false
+    var held = false
     func queue(_ link: URL) async throws { queries.append(link.lastPathComponent) }
-    func clear() async throws { queries.append("<clear>") }
+    func clear() async throws {
+        queries.append("<clear>")
+        if holdNextClear {
+            holdNextClear = false
+            held = true
+            while held { try await Task.sleep(for: .milliseconds(1)) }
+        }
+    }
 }
 
 final class FakeYT: Recommender, @unchecked Sendable {
@@ -39,17 +49,26 @@ final class FakeYT: Recommender, @unchecked Sendable {
     var liked: [String] = []
     var filters: [String?] = []
     var historyResult = HistoryResult.added
+    /// Extra chips the radio offers, so a mood's filters can match.
+    var extraChips: [Chip] = []
+    var extraChip: Chip? {
+        get { extraChips.first }
+        set { extraChips = newValue.map { [$0] } ?? [] }
+    }
     init(songs: [Song]) { self.songs = songs }
     func account() async throws -> Account? { signedIn ? Account(name: "Sam") : nil }
     func radio(from videoId: String, filter: String?) async throws -> RadioPage {
         filters.append(filter)
         // Like YT, radio starts with the song it was made from.
         let start = songs.firstIndex { $0.videoId == videoId } ?? 0
-        return RadioPage(songs: Array(songs[start...] + songs[..<start]), chips: [Chip(name: "All", playlistId: "a", params: "", isSelected: true),
-                                               Chip(name: "Familiar", playlistId: "f", params: "p", isSelected: false)])
+        var chips = [Chip(name: "All", playlistId: "a", params: "", isSelected: true),
+                     Chip(name: "Familiar", playlistId: "f", params: "p", isSelected: false)]
+        chips += extraChips
+        return RadioPage(songs: Array(songs[start...] + songs[..<start]), chips: chips)
     }
     func reportPlay(_ videoId: String) async throws -> HistoryResult { reported.append(videoId); return historyResult }
     func like(_ videoId: String) async throws { liked.append(videoId) }
+    func likedSongs() async throws -> [Song] { songs }
 }
 
 /// Every song is on Apple Music under its own title, except titles starting with "Missing".
@@ -304,5 +323,116 @@ struct FakeCatalog: Catalog {
         #expect(yt.filters.last == "Familiar")
         #expect(engine.chips.first { $0.isSelected }?.name == "Familiar")
         #expect(!engine.upcoming.contains { $0.title == "Seed" })  // already played
+    }
+
+    @Test func onLikedFiresWhenASongIsLikedOnYT() async {
+        var liked: [String] = []
+        engine.onLiked = { liked.append($0.videoId) }
+        await engine.start(yt.songs[0], poll: false)
+        plays("Seed", at: 10)
+        await engine.tick()
+        engine.toggleFavorite()
+        plays("Seed", at: 80, favorited: true)
+        await engine.tick()
+        plays("Two")
+        await engine.tick()
+        try? await Task.sleep(for: .milliseconds(50))  // the like runs in the background
+        #expect(yt.liked == ["v0"])
+        #expect(liked == ["v0"])
+    }
+
+    @Test func songLikedOnYTIsFavouritedInMusicAndNotLikedAgain() async {
+        engine.isLikedOnYT = { $0.videoId == "v0" }
+        await engine.start(yt.songs[0], poll: false)
+        player.commands = []
+        plays("Seed", at: 10)
+        await engine.tick()
+        #expect(player.commands == ["favorite"])
+        #expect(engine.current?.favorited == true)  // shown now, though Music reports it late
+        plays("Seed", at: 80, favorited: true)
+        await engine.tick()
+        plays("Two")
+        await engine.tick()
+        try? await Task.sleep(for: .milliseconds(50))  // reports run in the background
+        #expect(yt.reported == ["v0"])
+        #expect(yt.liked.isEmpty)  // already liked there
+        #expect(!player.commands.contains("unfavorite"))
+    }
+
+    @Test func songNotLikedOnYTIsLeftAlone() async {
+        engine.isLikedOnYT = { _ in false }
+        await engine.start(yt.songs[0], poll: false)
+        player.commands = []
+        plays("Seed", at: 10)
+        await engine.tick()
+        #expect(!player.commands.contains("favorite"))
+        #expect(engine.current?.favorited == false)
+    }
+
+    @Test func songAlreadyFavouritedInMusicIsNotFavouritedAgain() async {
+        engine.isLikedOnYT = { _ in true }
+        await engine.start(yt.songs[0], poll: false)
+        player.commands = []
+        plays("Seed", at: 10, favorited: true)
+        await engine.tick()
+        #expect(!player.commands.contains("favorite"))
+    }
+
+    @Test func moodStartPlaysFromAMoodSongAndAppliesTheFilter() async {
+        // feelGood has no matching chip (the fake offers only "All" and "Familiar"), so the radio
+        // stays on All.
+        let moodSongs = [yt.songs[2]]  // "Two"
+        await engine.start(mood: .feelGood, from: moodSongs, poll: false, pick: { $0.first })
+        #expect(engine.phase == .running)
+        #expect(engine.seed?.title == "Two")
+        #expect(engine.activity.contains { $0.text == "Mood: Feel good" })
+        // No chip matched feelGood's filters, so the filter stays "All".
+        #expect(engine.filter == "All")
+    }
+
+    @Test func moodStartAppliesAMatchingFilter() async {
+        // The fake radio also offers a "Chill" chip, which chill's filters match.
+        yt.extraChip = Chip(name: "Chill", playlistId: "c", params: "cp", isSelected: false)
+        await engine.start(mood: .chill, from: [yt.songs[2]], poll: false, pick: { $0.first })
+        #expect(engine.filter == "Chill")
+        #expect(yt.filters.contains("Chill"))
+    }
+
+    // The mood's filters are tried in order: energetic is ["Workout", "Energy", ...], so with both
+    // "Energy" and "Workout" offered, "Workout" wins.
+    @Test func moodStartTriesFiltersInOrder() async {
+        yt.extraChips = [Chip(name: "Energy", playlistId: "e", params: "ep", isSelected: false),
+                         Chip(name: "Workout", playlistId: "w", params: "wp", isSelected: false)]
+        await engine.start(mood: .energetic, from: [yt.songs[2]], poll: false, pick: { $0.first })
+        #expect(engine.filter == "Workout")
+    }
+
+    // A chip matches a mood's filter case-insensitively: a lowercase "chill" chip matches .chill.
+    @Test func moodStartMatchesFiltersCaseInsensitively() async {
+        yt.extraChip = Chip(name: "chill", playlistId: "c", params: "cp", isSelected: false)
+        await engine.start(mood: .chill, from: [yt.songs[2]], poll: false, pick: { $0.first })
+        #expect(engine.filter == "chill")
+    }
+
+    @Test func moodStartDoesNothingWithNoSongs() async {
+        await engine.start(mood: .party, from: [], poll: false, pick: { $0.first })
+        #expect(engine.phase == .idle)
+        #expect(queuer.queries.isEmpty)
+    }
+
+    // A radio started while a mood radio is still starting must not get the mood's filter.
+    @Test func slowMoodStartDoesNotFilterANewerRadio() async {
+        yt.extraChip = Chip(name: "Chill", playlistId: "c", params: "cp", isSelected: false)
+        let engine = self.engine, song = yt.songs[2]
+        queuer.holdNextClear = true  // the mood radio's start stalls clearing Playing Next
+        let moodStart = Task { @MainActor in
+            await engine.start(mood: .chill, from: [song], poll: false, pick: { $0.first })
+        }
+        while !queuer.held { await Task.yield() }
+        await engine.start(yt.songs[4], poll: false)  // a newer radio runs to completion meanwhile
+        queuer.held = false  // now the older start resumes, after the newer radio is running
+        await moodStart.value
+        #expect(engine.seed?.title == "Four")
+        #expect(engine.filter == "All")
     }
 }

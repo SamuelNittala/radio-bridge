@@ -42,6 +42,37 @@ private func fixture(_ name: String) throws -> Data {
         #expect(!chips[1].params.isEmpty)
     }
 
+    @Test func likedSongs() throws {
+        let songs = try YTParser.parseLiked(fixture("liked"))
+        // Three songs, newest first; the trailing continuation item is skipped.
+        #expect(songs.count == 3)
+        #expect(songs[0] == Song(videoId: "lkd-0000001", title: "Blinding Lights", artists: ["The Weeknd"],
+                                 length: 200, thumbnail: songs[0].thumbnail))
+        #expect(songs[1].videoId == "lkd-0000002")
+        #expect(songs[1].title == "Naatu Naatu")
+        // The " & " between the two artists is dropped.
+        #expect(songs[1].artists == ["Rahul Sipligunj", "Kaala Bhairava"])
+        #expect(songs[1].length == 215)  // 3:35
+        #expect(songs[2] == Song(videoId: "lkd-0000003", title: "Pink + White", artists: ["Frank Ocean"],
+                                 length: 184, thumbnail: songs[2].thumbnail))
+        // The largest thumbnail is kept.
+        #expect(songs[0].thumbnail?.absoluteString.contains("w120-h120") == true)
+    }
+
+    // A response with no browse page at all (signed out, or a changed layout) must throw, not read
+    // as "no liked songs" — that would let mergeYT wipe the stored library.
+    @Test func likedWithoutAPageThrows() throws {
+        let signedOut = Data(#"{"responseContext":{},"contents":{"singleColumnBrowseResultsRenderer":{}}}"#.utf8)
+        #expect(throws: YTError.self) { try YTParser.parseLiked(signedOut) }
+    }
+
+    // The page is there but has no song shelf (made-up: how an account without likes might look).
+    // Nothing says the session is bad, so this is an empty list, not an error.
+    @Test func likedPageWithoutAShelfIsEmpty() throws {
+        let noLikes = Data(#"{"contents":{"twoColumnBrowseResultsRenderer":{"secondaryContents":{}}}}"#.utf8)
+        #expect(try YTParser.parseLiked(noLikes) == [])
+    }
+
     @Test func account() throws {
         let signedIn = Data(#"""
             {"actions":[{"openPopupAction":{"popup":{"multiPageMenuRenderer":{"header":{"activeAccountHeaderRenderer":

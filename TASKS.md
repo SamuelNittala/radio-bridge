@@ -7,6 +7,15 @@
 
 ## Completed
 
+- [x] "Re-sort moods" in Liked songs: sends every song not set by hand to Claude again; an "unknown" answer keeps the old mood
+- [x] Songs already liked on YT (in the liked list: same id, or same title and an artist) are favourited in Music when they start, and not liked again
+- [x] Back button on the radio screen: back to the moods while the radio keeps playing; a "Now playing" bar returns to it
+- [x] Mood radio: liked songs grouped by mood; pick a mood to start a radio from one of its songs
+  - [x] Liked songs from YT ("Liked music", first 100) and from the app's own likes, kept on disk
+  - [x] Moods guessed by Claude Code (`claude -p`, token from `claude setup-token`, kept in Keychain); songs without a guess go to "No mood yet"
+  - [x] Change a song's mood by hand; a hand-picked mood is never overwritten
+  - [x] Mood row on the start screen; a click starts a radio from a random song of that mood, with YT's matching filter on
+
 - [x] Favourite button in Now Playing: favourites the radio song in Music; liked on YT when it finishes, if still favourited
 - [x] App icon: a play symbol sending out radio waves, drawn in code (Bundle/Icon)
 - [x] Release workflow: a v* tag builds the universal app, tests it and publishes a GitHub release with the zip

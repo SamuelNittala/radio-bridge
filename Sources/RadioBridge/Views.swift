@@ -68,6 +68,7 @@ struct AccountBar: View {
 
 struct SettingsMenu: View {
     @Environment(AppModel.self) private var model
+    @State private var showingToken = false
 
     var body: some View {
         @Bindable var model = model
@@ -85,6 +86,9 @@ struct SettingsMenu: View {
             }
             Divider()
             Toggle("Send plays and likes to YT", isOn: $model.reportToYT)
+            Button(model.hasClaudeToken ? "Change Claude Code token…" : "Claude Code token…") {
+                showingToken = true
+            }
             Divider()
             Text("Store country: \(model.country.uppercased())")
             Text("Shortcut: \(model.shortcutName)")
@@ -94,6 +98,48 @@ struct SettingsMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+        .sheet(isPresented: $showingToken) { ClaudeTokenSheet() }
+    }
+}
+
+/// A small sheet for the Claude Code token: paste it, Save, Remove (when one is saved), Cancel.
+struct ClaudeTokenSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var token = ""
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Claude Code token").font(.headline)
+            Text("Used to sort your liked songs into moods. Make one in Terminal with `claude setup-token` (needs a Claude subscription).")
+                .font(.callout).foregroundStyle(.secondary)
+            SecureField("Paste your token", text: $token)
+                .textFieldStyle(.roundedBorder)
+            if let error { Text(error).font(.caption).foregroundStyle(.orange) }
+            HStack {
+                if model.hasClaudeToken {
+                    Button("Remove", role: .destructive) { attempt { try model.removeClaudeToken() } }
+                }
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Save") { attempt { try model.saveClaudeToken(token) } }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
+    }
+
+    /// Closes the sheet when the Keychain accepted the change; otherwise says why it didn't.
+    private func attempt(_ change: () throws -> Void) {
+        do {
+            try change()
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }
 
@@ -158,11 +204,25 @@ struct RadioView: View {
     var body: some View {
         let engine = model.engine
         if engine.seed == nil {
-            Notice(text: "Search for a song. Its YT Music radio plays in Apple Music, and what you play and favourite there goes back to YT.",
-                   systemImage: "dot.radiowaves.left.and.right")
-                .frame(maxHeight: .infinity)
+            MoodPicker()
+        } else if model.showingMoods {
+            VStack(spacing: 0) {
+                BackToRadio()
+                Divider()
+                MoodPicker()
+            }
         } else {
             VStack(spacing: 0) {
+                HStack {
+                    Button { model.showingMoods = true } label: {
+                        Label("Moods", systemImage: "chevron.left")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Back to the moods; the radio keeps playing")
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
                 PhaseBanner()
                 NowPlaying()
                 if !engine.chips.isEmpty { Chips() }
@@ -187,6 +247,208 @@ struct RadioView: View {
                 }
                 .listStyle(.inset)
             }
+        }
+    }
+}
+
+// MARK: - Moods
+
+/// The SF Symbol shown for each mood on the start screen.
+extension Mood {
+    var symbol: String {
+        switch self {
+        case .chill: "leaf"
+        case .feelGood: "sun.max"
+        case .energetic: "bolt"
+        case .party: "party.popper"
+        case .romantic: "heart"
+        case .sad: "cloud.rain"
+        }
+    }
+}
+
+/// The start screen when no radio is playing: a grid of moods, plus the liked-songs sheet.
+/// On the mood screen while a radio plays: what's playing, and the way back to it.
+struct BackToRadio: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let engine = model.engine
+        let song = engine.current?.song ?? engine.seed
+        Button { model.showingMoods = false } label: {
+            HStack(spacing: 10) {
+                Artwork(url: song?.thumbnail, size: 32)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(engine.phase == .running || engine.phase == .starting ? "Now playing" : "Last radio")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(song?.title ?? "").lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+}
+
+struct MoodPicker: View {
+    @Environment(AppModel.self) private var model
+    @State private var showingLiked = false
+
+    private let columns = [GridItem(.flexible()), GridItem(.flexible())]
+
+    /// What the search box does; shown with the moods, and alone when there are no liked songs.
+    static let searchHint = "Search for a song. Its YT Music radio plays in Apple Music, and what you play and favourite there goes back to YT."
+
+    var body: some View {
+        // No liked songs at all: the old explanation, not an empty grid.
+        if model.library.songs.isEmpty {
+            VStack(spacing: 0) {
+                Notice(text: Self.searchHint,
+                       systemImage: "dot.radiowaves.left.and.right")
+                if let status = model.moodStatus {
+                    Text(status).font(.caption).foregroundStyle(.secondary).padding(.bottom, 12)
+                }
+            }
+            .frame(maxHeight: .infinity)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Play by mood").font(.title3.weight(.semibold))
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(Mood.allCases, id: \.self) { mood in
+                            MoodButton(mood: mood, count: model.library.songs(in: mood).count) {
+                                model.play(mood: mood)
+                            }
+                        }
+                    }
+                    Text(Self.searchHint)
+                        .font(.caption).foregroundStyle(.secondary)
+
+                    Divider()
+
+                    Button {
+                        showingLiked = true
+                    } label: {
+                        Label("Liked songs (\(model.library.songs.count))", systemImage: "heart.text.square")
+                    }
+
+                    if let status = model.moodStatus {
+                        Text(status).font(.caption).foregroundStyle(.secondary)
+                    }
+                    if !model.hasClaudeToken && model.songsNeedingMood > 0 {
+                        Text("Add a Claude Code token in settings to sort these by mood, or pick moods yourself in Liked songs.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(16)
+            }
+            .sheet(isPresented: $showingLiked) { LikedSongsSheet() }
+        }
+    }
+}
+
+struct MoodButton: View {
+    let mood: Mood
+    let count: Int
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: mood.symbol).font(.title2)
+                Text(mood.title).font(.callout.weight(.medium))
+                Text("\(count) song\(count == 1 ? "" : "s")").font(.caption2).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .disabled(count == 0)
+        .opacity(count == 0 ? 0.4 : 1)
+        .help(count == 0 ? "No \(mood.title.lowercased()) songs yet" : "Start a radio from a \(mood.title.lowercased()) song")
+    }
+}
+
+/// Liked songs grouped by mood (the six moods, then "No mood yet"); empty sections hidden.
+struct LikedSongsSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Liked songs").font(.headline)
+                Spacer()
+                Button(model.isGuessing ? "Sorting…" : "Re-sort moods") { model.resortMoods() }
+                    .disabled(!model.hasClaudeToken || model.isGuessing)
+                    .help(model.hasClaudeToken
+                          ? "Ask Claude again about every song you haven't set by hand"
+                          : "Add a Claude Code token in settings first")
+                if let status = model.moodStatus {
+                    Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            .padding(12)
+            Divider()
+            List {
+                ForEach(Mood.allCases, id: \.self) { mood in
+                    section(for: mood, title: mood.title)
+                }
+                section(for: nil, title: "No mood yet")
+            }
+            .listStyle(.inset)
+        }
+        .frame(width: 440, height: 560)
+    }
+
+    @ViewBuilder
+    private func section(for mood: Mood?, title: String) -> some View {
+        let songs = model.library.songs(in: mood)
+        if !songs.isEmpty {
+            Section("\(title) (\(songs.count))") {
+                ForEach(songs, id: \.videoId) { liked in
+                    LikedSongRow(liked: liked) {
+                        model.play(liked.song)
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct LikedSongRow: View {
+    @Environment(AppModel.self) private var model
+    let liked: LikedSong
+    let play: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: play) { SongRow(song: liked.song) }
+                .buttonStyle(.plain)
+            if liked.moodByHand {
+                Image(systemName: "hand.point.up.left")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .help("Picked by you")
+            }
+            Menu {
+                ForEach(Mood.allCases, id: \.self) { mood in
+                    Button(mood.title) { model.library.setMood(mood, for: liked.videoId) }
+                }
+                Divider()
+                Button("No mood") { model.library.setMood(nil, for: liked.videoId) }
+            } label: {
+                Text(liked.mood?.title ?? "Set mood")
+                    .font(.caption)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
         }
     }
 }
@@ -231,7 +493,8 @@ struct NowPlaying: View {
                 Text(song?.title ?? "").font(.title3.weight(.semibold)).lineLimit(2)
                 Text(song?.artistLine ?? "").foregroundStyle(.secondary).lineLimit(1)
                 if engine.current?.favorited == true {
-                    Label("Favourited, will be liked on YT", systemImage: "star.fill")
+                    Label(engine.current?.likedOnYT == true ? "Liked on YT, favourited in Music" : "Favourited, will be liked on YT",
+                          systemImage: "star.fill")
                         .font(.caption).foregroundStyle(.pink)
                 }
             }
