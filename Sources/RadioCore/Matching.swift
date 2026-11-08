@@ -25,6 +25,23 @@ public enum Matching {
         norm(replace(titleSuffix, in: replace(brackets, in: title, with: ""), with: ""))
     }
 
+    /// "森の小さなレストラン - Mori no chiisana restaurant" -> "mori no chiisana restaurant": YT often
+    /// writes "native - romanised", while Apple has only the romanised title. Only when the part
+    /// before the dash has no Latin letters, so "Hey Jude - Live" stays a title plus a version label.
+    static func titleAfterDash(_ title: String) -> String? {
+        let bare = replace(brackets, in: title, with: "")
+        guard let dash = bare.range(of: #"\s+-\s+"#, options: .regularExpression),
+              bare[..<dash.lowerBound].range(of: "[A-Za-z]", options: .regularExpression) == nil
+        else { return nil }
+        let rest = norm(String(bare[dash.upperBound...]))
+        return rest.isEmpty ? nil : rest
+    }
+
+    /// The Apple title is the YT one: the title before " - ", or a romanised title after it.
+    static func isExactTitle(_ song: Song, _ amTitle: String) -> Bool {
+        amTitle == normTitle(song.title) || amTitle == titleAfterDash(song.title)
+    }
+
     /// "A, B & C feat. D" -> {"a", "b", "c", "d"}
     public static func normArtists(_ artists: String) -> Set<String> {
         let lower = artists.lowercased()
@@ -52,7 +69,7 @@ public enum Matching {
     /// Does an Apple result look like the YT song? Title, artist and length.
     public static func isSameSong(_ song: Song, _ cand: AppleTrack) -> Bool {
         let ytTitle = normTitle(song.title), amTitle = normTitle(cand.trackName)
-        guard ytTitle == amTitle || amTitle.contains(ytTitle) || ytTitle.contains(amTitle) else { return false }
+        guard isExactTitle(song, amTitle) || amTitle.contains(ytTitle) || ytTitle.contains(amTitle) else { return false }
         let ytArtists = song.artists.reduce(into: Set<String>()) { $0.formUnion(normArtists($1)) }
         if !ytArtists.isEmpty && ytArtists.isDisjoint(with: normArtists(cand.artistName)) { return false }
         guard let length = song.length, let ms = cand.trackTimeMillis else { return true }
@@ -87,7 +104,7 @@ public enum Matching {
         var partial: AppleTrack?
         func pick(_ tracks: [AppleTrack]) -> AppleTrack? {
             let matches = tracks.filter { $0.trackViewUrl != nil && isSameSong(song, $0) }
-            if let exact = matches.first(where: { normTitle($0.trackName) == normTitle(song.title) }) { return exact }
+            if let exact = matches.first(where: { isExactTitle(song, normTitle($0.trackName)) }) { return exact }
             partial = partial ?? matches.first
             return nil
         }

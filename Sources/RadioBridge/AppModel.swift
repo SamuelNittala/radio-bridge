@@ -19,8 +19,25 @@ final class AppModel {
         didSet { scheduleSearch() }
     }
     var results: [Song] = []
+    /// The mood screen, opened with Back while a radio keeps playing.
+    var showingMoods = false
     var searching = false
     var searchError: String?
+
+    /// The user's liked songs grouped by mood.
+    let library = MoodLibrary()
+    /// Why YT's liked songs couldn't be loaded; kept until a later load works.
+    private var likesError: String?
+    /// Set only while the guess task runs, or when it fails.
+    private var guessStatus: String?
+    /// A short line for the start screen about loading YT likes and guessing moods.
+    var moodStatus: String? { guessStatus ?? likesError }
+    /// True when a Claude Code token is saved, so the UI knows whether moods can be guessed.
+    var hasClaudeToken = ClaudeCodeToken.saved
+    /// The one running guess; only it sets and clears "Sorting…".
+    private var guessTask: Task<Void, Never>?
+    /// Identifies the latest guess task, so an older one can't clear the newer one's slot.
+    private var guessRun = UUID()
 
     /// Shortcuts the app needs that the user hasn't made yet.
     var missingShortcuts: [String] = []
@@ -63,6 +80,12 @@ final class AppModel {
         engine = RadioEngine(player: MusicAppPlayer(), queuer: ShortcutQueuer(name: shortcutName, clearName: "Clear AM"),
                              yt: yt, catalog: AppleCatalog(country: country))
         engine.reportToYT = reportToYT
+        engine.onLiked = { [weak self] song in
+            guard let self else { return }
+            self.library.addLiked(song)
+            self.guessMoods()  // place the newly liked song too, if a token is saved
+        }
+        engine.isLikedOnYT = { [weak self] song in self?.library.contains(song) ?? false }
 
         // Music announces every play, pause and track change; react at once instead of waiting for the poll.
         DistributedNotificationCenter.default().addObserver(
@@ -94,6 +117,7 @@ final class AppModel {
                     defaults.set(browser.id, forKey: "browser")
                     defaults.set(profile.dir, forKey: "profile.\(browser.id)")
                     signIn = .signedIn(account, profile)
+                    refreshLikes()
                     return
                 }
             } catch let error as CookieError {
@@ -174,6 +198,102 @@ final class AppModel {
 
     func play(_ song: Song) {
         query = ""
+        showingMoods = false
         Task { await engine.start(song) }
+    }
+
+    // MARK: - Moods
+
+    /// Fetches YT's "Liked music", merges it into the library, then guesses moods if a token is saved.
+    /// Nothing here blocks sign-in or playback; failures only set `moodStatus`.
+    func refreshLikes() {
+        Task {
+            do {
+                let liked = try await yt.likedSongs()
+                library.mergeYT(liked)
+                likesError = nil
+            } catch {
+                likesError = "Couldn't load your YT likes: \(error.localizedDescription)"
+            }
+            guessMoods()
+        }
+    }
+
+    /// Guesses moods for songs that have none, if a Claude Code token is saved. One run at a time.
+    /// The token is read only when there is something to send.
+    func guessMoods() {
+        guard guessTask == nil, library.songsToGuess > 0 else { return }
+        startGuessing(after: nil)
+    }
+
+    /// Starts the guess task, once `previous` (a cancelled run) has finished with its songs.
+    /// The task goes on until nothing is left to send (songs liked meanwhile), stops at a failure,
+    /// and says nothing if it was cancelled or the token was removed: that was on purpose.
+    private func startGuessing(after previous: Task<Void, Never>?) {
+        guard hasClaudeToken else { return }
+        let run = UUID()
+        guessRun = run
+        guessTask = Task {
+            await previous?.value
+            // Only the latest run clears the slot; an older, cancelled one must not clear a newer.
+            defer { if guessRun == run { guessTask = nil } }
+            while hasClaudeToken, !Task.isCancelled, library.songsToGuess > 0 {
+                guard let token = ClaudeCodeToken.read() else {
+                    guessStatus = "Couldn't read the Claude Code token from the Keychain."
+                    return
+                }
+                guessStatus = "Sorting songs into moods…"
+                do {
+                    try await library.guessMoods(using: ClaudeCodeMoodGuesser(token: token, run: ClaudeCode.run))
+                    guessStatus = nil
+                } catch {
+                    if !Task.isCancelled { guessStatus = "Couldn't guess moods: \(error.localizedDescription)" }
+                    return
+                }
+            }
+        }
+    }
+
+    /// Sends every song not set by hand to Claude again; a run in progress picks them up too.
+    func resortMoods() {
+        library.resortMoods()
+        guessMoods()
+    }
+
+    /// A guess run is going (for the "Sorting…" state of the re-sort button).
+    var isGuessing: Bool { guessTask != nil }
+
+    func play(mood: Mood) {
+        query = ""
+        showingMoods = false
+        let songs = library.songs(in: mood).map(\.song)
+        Task { await engine.start(mood: mood, from: songs) }
+    }
+
+    /// Songs with no mood yet that the user hasn't deliberately left that way, for the start-screen hint.
+    var songsNeedingMood: Int {
+        library.songs(in: nil).filter { !$0.moodByHand }.count
+    }
+
+    /// Throws if the Keychain refuses, so the sheet can say so; the token counts as saved only if it was.
+    /// A run in progress used the old token, so it is ended and a new one starts with this token.
+    func saveClaudeToken(_ token: String) throws {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        try ClaudeCodeToken.save(trimmed)
+        hasClaudeToken = true
+        let old = guessTask
+        old?.cancel()
+        guessStatus = nil
+        startGuessing(after: old)  // place the songs that have no mood
+    }
+
+    /// Ends a run in progress too, without an error: removing the token was on purpose.
+    func removeClaudeToken() throws {
+        try ClaudeCodeToken.remove()
+        hasClaudeToken = false
+        // Left set until the run ends (its defer clears it), so a token saved meanwhile waits for it.
+        guessTask?.cancel()
+        guessStatus = nil
     }
 }

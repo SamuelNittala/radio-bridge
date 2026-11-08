@@ -54,16 +54,40 @@ public enum YTParser {
 
     // MARK: - Responses
 
-    public static func parseSearch(_ data: Data) throws -> [Song] {
-        let json = try JSONSerialization.jsonObject(with: data)
-        return findAll("musicResponsiveListItemRenderer", in: json).compactMap { item in
+    /// Songs in a list of `musicResponsiveListItemRenderer`s (search results, a playlist).
+    /// `length` differs by response, so it is read by the caller from the item and its byline.
+    private static func listItems(_ json: Any, length: (_ item: JSON, _ byline: [JSON]) -> String?) -> [Song] {
+        findAll("musicResponsiveListItemRenderer", in: json).compactMap { item in
             guard let videoId = dig(item, "playlistItemData", "videoId") as? String,
                   let columns = item["flexColumns"] as? [JSON] else { return nil }
             let column = { (i: Int) in dig(columns, i, "musicResponsiveListItemFlexColumnRenderer", "text") }
             let byline = (dig(column(1), "runs") as? [JSON]) ?? []
-            let length = byline.compactMap { $0["text"] as? String }.last(where: Matching.isDuration)
             return Song(videoId: videoId, title: text(column(0)), artists: artists(byline),
-                        length: Matching.seconds(length), thumbnail: thumbnail(item["thumbnail"]))
+                        length: Matching.seconds(length(item, byline)), thumbnail: thumbnail(item["thumbnail"]))
+        }
+    }
+
+    public static func parseSearch(_ data: Data) throws -> [Song] {
+        let json = try JSONSerialization.jsonObject(with: data)
+        // Search puts the length as the last duration-shaped run in the byline.
+        return listItems(json) { _, byline in
+            byline.compactMap { $0["text"] as? String }.last(where: Matching.isDuration)
+        }
+    }
+
+    /// The account's "Liked music" playlist: its first page (newest first, up to 100 songs).
+    /// Each song is a musicResponsiveListItemRenderer; the trailing continuationItemRenderer,
+    /// which has no such renderer, is skipped. Unlike search, the length is in a fixed column.
+    ///
+    /// Throws when the response has no browse page at all: a signed-out or changed response would
+    /// otherwise read as "no liked songs" and wipe the stored library. A page without a song shelf
+    /// is an empty list (and `mergeYT` ignores an empty list, so it can't wipe anything either).
+    public static func parseLiked(_ data: Data) throws -> [Song] {
+        let json = try JSONSerialization.jsonObject(with: data)
+        guard !findAll("twoColumnBrowseResultsRenderer", in: json).isEmpty else { throw YTError.signedOut }
+        return listItems(json) { item, _ in
+            dig(item, "fixedColumns", 0, "musicResponsiveListItemFixedColumnRenderer",
+                "text", "runs", 0, "text") as? String
         }
     }
 

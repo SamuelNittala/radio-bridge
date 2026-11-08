@@ -53,6 +53,11 @@ public actor YTClient {
         try YTParser.parseSearch(try await send("search", ["query": query, "params": Self.songsOnly]))
     }
 
+    /// The account's "Liked music", newest first. Only the first page (up to 100 songs) is read.
+    public func likedSongs() async throws -> [Song] {
+        try YTParser.parseLiked(try await send("browse", ["browseId": "VLLM"]))
+    }
+
     /// Radio from a song. With a filter name (Familiar, Discover...), applies that filter
     /// the way tapping its button does; if the song has no such filter, plain radio.
     public func radio(from videoId: String, filter: String?) async throws -> RadioPage {
