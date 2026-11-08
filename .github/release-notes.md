@@ -2,11 +2,8 @@ Plays YT Music radio in Apple Music. Plays and favourites go back to YT Music.
 
 ## What's new
 
-- **Mood radio**: your liked songs (YT "Liked music" and songs liked in the app) are grouped into Chill, Feel good, Energetic, Party, Romantic and Sad. Pick a mood to start a radio from one of its songs.
-- Moods are sorted by Claude Code. Change a song's mood by hand, or click **Re-sort moods** to sort the rest again.
-- Songs already liked on YT are favourited in Music when they play, and aren't liked again.
-- Back button on the radio screen: return to the moods while the radio keeps playing.
-- Better matching for YT titles written "native - romanised" (森の小さなレストラン - Mori no chiisana restaurant).
+- Songs an older version couldn't find on Apple Music are searched again after an update, so matching fixes reach them. Before, a miss was kept for a week, which is why 0.3.0's fix for titles like "森の小さなレストラン - Mori no chiisana restaurant" didn't show up at once.
+- Mood radio arrived in [0.3.0](https://github.com/SamuelNittala/radio-bridge/releases/tag/v0.3.0).
 
 ## Install
 
