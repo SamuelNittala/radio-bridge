@@ -7,6 +7,7 @@
 
 ## Completed
 
+- [x] Match YT titles written "native - romanised" (森の小さなレストラン - Mori no chiisana restaurant) against Apple's romanised title
 - [x] "Re-sort moods" in Liked songs: sends every song not set by hand to Claude again; an "unknown" answer keeps the old mood
 - [x] Songs already liked on YT (in the liked list: same id, or same title and an artist) are favourited in Music when they start, and not liked again
 - [x] Back button on the radio screen: back to the moods while the radio keeps playing; a "Now playing" bar returns to it

@@ -40,6 +40,18 @@ import Testing
         #expect(!Matching.isSameSong(song, track(1, "Nikes", "Frank Ocean")))
     }
 
+    // YT gives "native - romanised"; Apple has only the romanised title.
+    @Test func romanisedTitleAfterTheDash() async throws {
+        let song = Song(videoId: "v", title: "森の小さなレストラン - Mori no chiisana restaurant", artists: ["Aoi Teshima"], length: 153)
+        let single = track(1, "Mori No Chiisana Restaurant", "Aoi Teshima", ms: 153_033, album: "Single")
+        #expect(Matching.isSameSong(song, single))
+        let found = try await Matching.findTrack(for: song) { _ in [single] }
+        #expect(found?.trackId == 1)
+        // A version label after the dash is still not a title of its own.
+        let live = Song(videoId: "v", title: "Hey Jude - Live", artists: ["The Beatles"], length: 184)
+        #expect(!Matching.isSameSong(live, track(2, "Live", "The Beatles")))
+    }
+
     @Test func oneSearchWhenTheSongIsInTheResults() async throws {
         var searches: [String] = []
         let found = try await Matching.findTrack(for: song) { searches.append($0); return [self.track(1, "Pink + White", "Frank Ocean")] }
