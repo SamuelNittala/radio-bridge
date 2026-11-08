@@ -29,6 +29,8 @@ public actor AppleCatalog: Catalog {
     struct Cached: Codable {
         var track: AppleTrack?
         var date: Date
+        /// The app version that saved it; nil for entries saved before versions were recorded.
+        var version: String?
     }
 
     /// Catalogs change: songs not found are looked up again after a week, found ones after a month.
@@ -40,6 +42,7 @@ public actor AppleCatalog: Catalog {
 
     public nonisolated let country: String
     private let cacheFile: URL?
+    private let appVersion: String
     private let fetch: Fetch
     private let clock: @Sendable () -> Date
     private var cache: [String: Cached]
@@ -48,10 +51,12 @@ public actor AppleCatalog: Catalog {
     private var failures = 0
 
     public init(country: String, cacheFile: URL? = AppleCatalog.defaultCacheFile,
+                appVersion: String = AppleCatalog.currentAppVersion,
                 fetch: @escaping Fetch = AppleCatalog.urlSessionFetch,
                 clock: @escaping @Sendable () -> Date = Date.init) {
         self.country = country
         self.cacheFile = cacheFile
+        self.appVersion = appVersion
         self.fetch = fetch
         self.clock = clock
         cache = cacheFile.flatMap { try? JSONDecoder().decode([String: Cached].self, from: Data(contentsOf: $0)) } ?? [:]
@@ -62,6 +67,10 @@ public actor AppleCatalog: Catalog {
             .appendingPathComponent("Radio Bridge/apple-tracks.json")
     }
 
+    public static var currentAppVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    }
+
     public static let urlSessionFetch: Fetch = { url in
         let (data, response) = try await URLSession.shared.data(from: url)
         return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
@@ -69,13 +78,14 @@ public actor AppleCatalog: Catalog {
 
     public func find(_ song: Song) async throws -> AppleTrack? {
         let key = "\(country)|\(song.videoId)"
-        if let hit = cache[key],
+        // A miss counts only for the version that saved it: an update may match the song now.
+        if let hit = cache[key], hit.track != nil || hit.version == appVersion,
            clock().timeIntervalSince(hit.date) < (hit.track == nil ? Self.missingLifetime : Self.foundLifetime) {
             return hit.track
         }
         let track = try await Matching.findTrack(for: song, search: { try await self.search($0) },
                                                  artistSongs: { try await self.artistSongs($0) })
-        cache[key] = Cached(track: track, date: clock())
+        cache[key] = Cached(track: track, date: clock(), version: appVersion)
         save()
         return track
     }

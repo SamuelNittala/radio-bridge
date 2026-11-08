@@ -46,9 +46,10 @@ final class FakeStore: @unchecked Sendable {
                           collectionName: "Blonde", trackTimeMillis: 184_000,
                           trackViewUrl: URL(string: "https://music.apple.com/in/album/pink-white/1146195596?i=1146195714"))
 
-    func catalog(file: URL? = nil) -> AppleCatalog {
+    func catalog(file: URL? = nil, appVersion: String = "1.0.0") -> AppleCatalog {
         let store = self.store
-        return AppleCatalog(country: "in", cacheFile: file, fetch: { store.fetch($0) }, clock: { store.now })
+        return AppleCatalog(country: "in", cacheFile: file, appVersion: appVersion,
+                            fetch: { store.fetch($0) }, clock: { store.now })
     }
 
     @Test func foundSongIsNotSearchedAgain() async throws {
@@ -102,6 +103,35 @@ final class FakeStore: @unchecked Sendable {
         store.calls = []
         #expect(try await catalog(file: file).find(song)?.trackId == 2)
         #expect(store.calls.isEmpty)
+    }
+
+    // An update may match songs the old version missed, so its misses are searched again.
+    @Test func missingSongIsSearchedAgainAfterAnUpdate() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("cache-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        #expect(try await catalog(file: file, appVersion: "1.0.0").find(song) == nil)
+        store.tracks = [pink]
+        #expect(try await catalog(file: file, appVersion: "1.0.0").find(song) == nil)
+        #expect(try await catalog(file: file, appVersion: "1.1.0").find(song)?.trackId == 2)
+    }
+
+    @Test func foundSongIsNotSearchedAgainAfterAnUpdate() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("cache-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        store.tracks = [pink]
+        _ = try await catalog(file: file, appVersion: "1.0.0").find(song)
+        store.calls = []
+        #expect(try await catalog(file: file, appVersion: "1.1.0").find(song)?.trackId == 2)
+        #expect(store.calls.isEmpty)
+    }
+
+    // Misses saved before versions were recorded (0.3.0 and earlier) are searched again too.
+    @Test func missWithoutAVersionIsSearchedAgain() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("cache-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data(#"{"in|v1": {"date": 0}}"#.utf8).write(to: file)
+        store.tracks = [pink]
+        #expect(try await catalog(file: file).find(song)?.trackId == 2)
     }
 
     @Test func pausesAfterRefusalAndDoublesThePause() async throws {
